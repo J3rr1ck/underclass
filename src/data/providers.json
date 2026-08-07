@@ -1,0 +1,210 @@
+{
+  "openrouter": {
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "authEnv": "OPENROUTER_API_KEY",
+    "defaultModel": "qwen/qwen3-coder-next",
+    "toolCalling": true,
+    "notes": "Recommended hosted default. 260 of 340 models are tool-capable (recounted 2026-08-06); verify with GET /api/v1/models?supported_parameters=tools. Tool support also varies PER ENDPOINT (upstream host) — SiliconFlow, DigitalOcean, Google and Amazon Bedrock all serve openai/gpt-oss-120b with tools=false — check GET /api/v1/models/{author}/{slug}/endpoints. under cannot send a provider body object, so set routing preferences account-wide. NEVER omit -m: the list is newest-first, so data[0] churns — 2026-08-06 it is meta/muse-spark-1.2 ($1.25/$4.25 per 1M), with anthropic/claude-opus-5-fast ($10/$50, re-verified same day) just below; never assume position, look up by id. Free tier 20 req/min, 50 req/day, rising permanently to 1000/day after $10 lifetime credit. If a tool loop misbehaves on a reasoning model, switch to a non-reasoning one first. Other verified tool-capable coding ids: moonshotai/kimi-k2.7-code, z-ai/glm-5.2, deepseek/deepseek-v4-pro, mistralai/devstral-2512.",
+    "privacy": "OpenRouter itself: 'does not store your prompts or responses, unless you opt in'; retention is always opt-in and both logging options default off. Upstream providers are the exposure and the default is permissive — toggle off training-provider routing at openrouter.ai/settings/privacy for BOTH free and paid models. A ZDR enforcement setting is also available."
+  },
+  "moonshot": {
+    "baseUrl": "https://api.moonshot.ai/v1",
+    "authEnv": "MOONSHOT_API_KEY",
+    "defaultModel": "kimi-k2.7-code",
+    "toolCalling": true,
+    "notes": "Moonshot's first-party Kimi API; OpenAI-compatible (endpoint liveness and error shape verified 2026-08-06; the same model id is listed tool-capable on OpenRouter and Novita, but run `under doctor --deep` here before relying on it). kimi-k2.7-code is the coding tier: $0.95/$4.00 per 1M in/out, 262K context, cache-hit input $0.19. kimi-k3 is the 1M-context 2.8T-MoE flagship at $3/$15 — 4x the output price; route to it deliberately, not by default. Keys from platform.moonshot.ai; a key does not work until the account carries a $1 minimum top-up. The Anthropic-compatible route lives at api.moonshot.ai/anthropic, NOT <host>/v1/messages — relevant to adapters, not to under itself.",
+    "privacy": "Not audited by this repo. Retention and training terms are whatever platform.moonshot.ai's current policy says — read it before sending private code; nothing here should be taken as a zero-retention claim."
+  },
+  "meta": {
+    "baseUrl": "https://api.meta.ai/v1",
+    "authEnv": "META_MODEL_API_KEY",
+    "defaultModel": "muse-spark-1.2",
+    "toolCalling": true,
+    "notes": "The Meta Model API behind Muse Code (launched in beta 2026-08-05); OpenAI-compatible error shape verified live 2026-08-06, tool calling implied by the agent product but NOT yet verified here — run `under doctor --deep` first. muse-spark-1.2 standard tier: $1.25/$4.25 per 1M in/out, cached input $0.15, with a no-training commitment per launch coverage. THE TRAP: the ~10x-cheaper 'contributor' tier ($0.30/1M in) is priced that way because Meta gets training rights on your prompts — that is, on whatever code you point under at. This preset deliberately names the standard tier; opt into the contributor tier only knowingly, with -m. Keys from dev.meta.ai; launch coverage mentions $20 in free credits (unverified).",
+    "privacy": "Standard tier: launch materials commit that prompts and completions are not used for training. Contributor tier: the opposite, by design. Retention specifics beyond that are not audited by this repo — read dev.meta.ai's terms before sending private code."
+  },
+  "groq": {
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "authEnv": "GROQ_API_KEY",
+    "defaultModel": "openai/gpt-oss-120b",
+    "toolCalling": true,
+    "notes": "Fastest usable hosted option. 'All models hosted on Groq support tool use' — exceptions are groq/compound, groq/compound-mini (server-side built-in tools only) and openai/gpt-oss-safeguard-20b. Use ONLY production models: openai/gpt-oss-120b (131,072 ctx, $0.15/$0.60) or openai/gpt-oss-20b. Do NOT preset qwen/qwen3.6-27b or minimaxai/minimax-m2.7 (Preview, 'evaluation purposes only'), nor llama-3.1-8b-instant / llama-3.3-70b-versatile (shutdown August 2026). Free tier is roughly 6-8K TPM, below one agent turn — budget for paid. Rejects logprobs, logit_bias, top_logprobs, messages[].name; n must be 1; temperature 0 is silently rewritten to 1e-8.",
+    "privacy": "Strong. 'By default, Groq does not retain customer data for inference requests.' Inputs/outputs logged up to 30 days only for error troubleshooting or abuse investigation. Org-level Zero Data Retention toggle. All data in US GCP buckets. Services Agreement bars training on inputs/outputs without permission."
+  },
+  "novita": {
+    "baseUrl": "https://api.novita.ai/openai/v1",
+    "authEnv": "NOVITA_API_KEY",
+    "defaultModel": "qwen/qwen3-coder-next",
+    "toolCalling": true,
+    "notes": "Cheapest genuinely-good coding models, and the best per-model tool-calling oracle outside OpenRouter: GET /openai/v1/models returns a features array — 106 of 145 models list 'function-calling' (recounted 2026-08-06). qwen/qwen3-coder-next is 262,144 ctx at $0.20/$1.50. Other verified: deepseek/deepseek-v4-flash ($0.14/$0.28, 1M ctx), zai-org/glm-5.2, moonshotai/kimi-k2.7-code. Genuinely free AND tool-capable: inclusionai/ling-3.0-flash, mindai/macaron-v1-venti. Novita's docs advise NOT re-sending the tools array on the follow-up request after tool results — the opposite of OpenRouter's requirement; under sends tools every turn, which appears advisory rather than enforced, but check here first if loops misbehave. NEVER omit -m: data[0] is moonshotai/kimi-k3 at $3/$15. The bare https://api.novita.ai/openai form also works.",
+    "privacy": "Mixed. 'The Personal Information will not be used for model training', but the policy explicitly 'does not apply to content that we process on behalf of customers while providing services' — prompt retention is governed by a separate agreement and is UNCONFIRMED. Technical/log data retained 2 years."
+  },
+  "deepinfra": {
+    "baseUrl": "https://api.deepinfra.com/v1/openai",
+    "authEnv": "DEEPINFRA_TOKEN",
+    "defaultModel": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+    "toolCalling": true,
+    "notes": "Note the inverted path — /v1/openai, not /openai/v1. Cheapest per-token on several coding models ($0.30/$1.00 for the default; openai/gpt-oss-120b is $0.037/$0.17; deepseek-ai/DeepSeek-V4-Flash $0.09/$0.18 at 1M ctx; zai-org/GLM-5.2 $0.93/$3.00). No per-model tool-calling flag exists in the public /models payload — provider-level support is documented but verify a specific id with `under doctor`. Documented caveats: parallel tool calls supported but 'quality may vary', NESTED tool calls unsupported, and 'model quality degrades with more functions' — directly relevant to under's 11-tool default set. Max output is capped at 16,384 on most models, a real constraint for large multi-file edits. No free tier: a card or prepayment is required before any use.",
+    "privacy": "Good, not zero-retention. 'We will not store, sell, or train using this data unless we have your explicit consent', but 'We might sometimes store, for a limited period of time, the inputs and outputs to API calls for debugging purposes.'"
+  },
+  "fireworks": {
+    "baseUrl": "https://api.fireworks.ai/inference/v1",
+    "authEnv": "FIREWORKS_API_KEY",
+    "defaultModel": "accounts/fireworks/models/kimi-k2p7-code",
+    "toolCalling": true,
+    "notes": "Best privacy of any hosted provider whose ZDR is on by default. Model ids substitute 'p' for '.' and are fully namespaced. The default kimi-k2p7-code is $0.95/$4.00 per 1M in/out (cached input $0.19, 262k ctx) on the standard serverless tier — Priority is 1.5x and Fast 2x that (docs.fireworks.ai/serverless/pricing, verified 2026-08-06). Existence-verified live: kimi-k2p7-code, glm-5p2, glm-5p1, deepseek-v4-pro, deepseek-v4-flash, minimax-m3, qwen3p7-plus, kimi-k2p6, gpt-oss-120b, gpt-oss-20b. VERIFIED NOT_FOUND — do not ship: qwen3p7-max, qwen3-coder-480b-a35b-instruct, qwen3-coder-next, kimi-k2-instruct. CAVEAT: tool calling is per-model via a supportsTools field that is NOT publicly enumerable (/v1/models requires auth), so run `under doctor` before relying on a new id. max_tokens is silently clamped rather than erroring when prompt+max_tokens exceeds context. $1 one-shot signup credit, not recurring.",
+    "privacy": "Best-in-class among non-TEE hosts. Zero data retention by default: 'prompt and generation data exist only in volatile memory for the duration of the request'; no logging or storing of prompt+generation for open models without explicit opt-in. No account toggle needed. (The Responses API defaults to store=True with 30-day retention — irrelevant, under uses chat completions.)"
+  },
+  "together": {
+    "baseUrl": "https://api.together.ai/v1",
+    "authEnv": "TOGETHER_API_KEY",
+    "defaultModel": "moonshotai/Kimi-K2.7-Code",
+    "toolCalling": true,
+    "notes": "Function calling is documented per-model in an explicit catalog column. Verified FC-yes with exact contexts: moonshotai/Kimi-K2.7-Code (262,144, $0.95/$4.00), deepseek-ai/DeepSeek-V4-Pro (512,000, $1.74/$3.48), openai/gpt-oss-120b (128,000, $0.15/$0.60), zai-org/GLM-5.2 (262,144, $1.40/$4.40), MiniMaxAI/MiniMax-M3 (524,288, $0.30/$1.20). Always use the full org-prefixed id. No free tier — 'Together AI does not currently offer free trials'; a $5 minimum credit purchase is required. Rate limits are dynamic and unpublished ('no fixed per-model limits published') — plan for 429s during a fan-out. logit_bias unsupported on most models; seed is best-effort; reasoning_effort only on GPT-OSS. The legacy api.together.xyz/v1 host also responds.",
+    "privacy": "Conditional. 'We do not use any data collected from you to train our models without your explicit opt-in and consent', but Zero Data Retention is OPT-IN, not the default — by default prompts and responses are retained in playground history. Enable ZDR in settings before pointing under at a private repo."
+  },
+  "baseten": {
+    "baseUrl": "https://inference.baseten.co/v1",
+    "authEnv": "BASETEN_API_KEY",
+    "defaultModel": "moonshotai/Kimi-K2.7-Code",
+    "toolCalling": true,
+    "notes": "The cleanest blanket tool-calling guarantee of any provider here, quoted verbatim from the docs: 'All models support tool calling (also known as function calling), structured outputs, and JSON mode' — across all 13 Model API models. No per-model checking needed. Verified ids: moonshotai/Kimi-K2.7-Code, deepseek-ai/DeepSeek-V4-Pro, zai-org/GLM-5.2, openai/gpt-oss-120b, nvidia/Nemotron-120B-A12B. Contexts span 128k-1048k. Also exposes an Anthropic Messages facade at /v1/messages, documented as beta ('behavior may change before general availability'). Free credits on signup. Per-model pricing is partly unconfirmed — track spend on the dashboard.",
+    "privacy": "SOC 2 Type II and HIPAA compliant, but no quotable prompt-retention or no-training statement was found. Treat retention as UNSTATED rather than guaranteed."
+  },
+  "sambanova": {
+    "baseUrl": "https://api.sambanova.ai/v1",
+    "authEnv": "SAMBANOVA_API_KEY",
+    "defaultModel": "gpt-oss-120b",
+    "toolCalling": true,
+    "notes": "Exactly six models are served, all six support tool calling with full tool_choice (auto/required/none/named): gpt-oss-120b (131,072), MiniMax-M2.7 (196,608), DeepSeek-V3.1 (131,072), Meta-Llama-3.3-70B-Instruct (131,072), DeepSeek-V3.2 (32,768, Preview), gemma-4-31B-it (131,072, Preview). Qwen3-235B-A22B-Instruct-2507 appears in third-party lists and is NOT served — it will 404. /v1/models is public (HTTP 200 unauthenticated), so under's model discovery works without a key. Quirk on gpt-oss-120b: forcing a named function requires the Chat Completions inner-'function' shape, and allowed_tools is unsupported. The free tier is 20 requests per DAY — unusable for an agent loop; the Developer tier (60 RPM, 12,000 RPD, $5 credit) is the real product.",
+    "privacy": "WEAKEST DOCUMENTED POSITION HERE. Marketing claims SambaCloud 'never sees or collects any of your data or user prompts', but the actual privacy policy does not address prompt/output retention or training use at all. UNCONFIRMED — get it in writing before sending a private repo."
+  },
+  "nvidia": {
+    "baseUrl": "https://integrate.api.nvidia.com/v1",
+    "authEnv": "NVIDIA_API_KEY",
+    "defaultModel": "deepseek-ai/deepseek-v4-pro",
+    "toolCalling": true,
+    "notes": "USE FOR EVALUATION ONLY — see privacy. Each build.nvidia.com model page embeds modelCapability:{functionCalling,structuredOutput,contextLength}. Verified functionCalling AND structuredOutput true: deepseek-ai/deepseek-v4-pro (1,048,576), z-ai/glm-5.2 (1,048,576), qwen/qwen3.5-397b-a17b (262,144), moonshotai/kimi-k2.6 (262,144), nvidia/nemotron-3-super-120b-a12b (1,048,576), deepseek-ai/deepseek-v4-flash (1,048,576). functionCalling true but structuredOutput FALSE: openai/gpt-oss-120b, nvidia/nemotron-3-ultra-550b-a55b, nvidia/nemotron-3-nano-30b-a3b. RETIRED — return HTTP 410 with a dated body despite still appearing in stale NVIDIA docs: qwen/qwen3-coder-480b-a35b-instruct (EOL 2026-06-11, successor is qwen/qwen3.5-397b-a17b), qwen/qwen2.5-coder-32b-instruct, moonshotai/kimi-k2-instruct, mistralai/mistral-large-3-675b-instruct-2512; deepseek-ai/deepseek-r1 returns 404. GET /v1/models returns 200 unauthenticated (118-120 live entries) — the only trustworthy liveness list. No Anthropic facade: POST /v1/messages returns 404 on hosted (it exists only on self-hosted NIM containers). Budget for a common 403 'Authorization failed' on chat-completions-but-not-/models when a key is minted under a personal org lacking the 'Public API Endpoints' permission — no public fix found. Free-tier limits are not published in any primary source; forum consensus is ~40 RPM with no way to raise it, and users running exactly this agentic workload report near-instant 429s.",
+    "privacy": "DISQUALIFYING FOR PROPRIETARY CODE. The governing NVIDIA API Trial Terms of Service §3.3(iv): NVIDIA collects 'User Content and Generated Content to improve NVIDIA products and services, including AI models.' §2.4: content stored 30 days from first upload. §2.6(a): you agree your content will not 'include any confidential information, controlled or sensitive data... personal data.' §1.2: access is 'for limited trial purposes only and without use... in production.' No opt-out flag or zero-retention tier found."
+  },
+  "tinfoil": {
+    "baseUrl": "https://inference.tinfoil.sh/v1",
+    "authEnv": "TINFOIL_API_KEY",
+    "defaultModel": "kimi-k2-6",
+    "toolCalling": true,
+    "notes": "Best sovereignty pick that is also easy to validate: the public /v1/models gives every model a top-level tool_calling boolean, so a preset can be CI-checked instead of rotting. All five chat models are tool_calling:true — kimi-k2-6 (256k, $1.50/$5.25; docs single it out for 'exceptional tool calling'), glm-5-2 (384k, $1.50/$5.25), gpt-oss-120b (131k, $0.15/$0.60), gemma4-31b (256k, $0.40/$1.00), llama3-3-70b (128k, $1.75/$2.75). The nine tool_calling:false entries are all embedding/audio/tts/document types. Intel TDX + NVIDIA H100 confidential compute with remote attestation. https://api.tinfoil.sh/v1 serves an identical catalog. A $5 signup credit is widely reported but could NOT be confirmed on a Tinfoil-owned page — the documented key-creation flow says 'Complete checkout with payment details'. Treat the free tier as unconfirmed.",
+    "privacy": "STRONGEST WRITTEN GUARANTEE FOUND, and it names agent traffic explicitly: 'The following are never retained: prompts, completions, uploaded files as plaintext, embeddings, tool-call payloads, request bodies, response bodies, intermediate inference traces, or error traces containing user content.' And: 'Enclaves are stateless and plaintext content does not leave the enclave at any point, so it cannot be used for training, fine-tuning, evaluation, or service improvement even if we wanted to.' Retained: per-request usage metadata only (input tokens, output tokens, model name, timestamp)."
+  },
+  "venice": {
+    "baseUrl": "https://api.venice.ai/api/v1",
+    "authEnv": "VENICE_API_KEY",
+    "defaultModel": "qwen3-coder-480b-a35b-instruct-turbo",
+    "toolCalling": true,
+    "notes": "Note the path is /api/v1, not /v1. GET /api/v1/models?type=text is public (200, no key) and every entry carries model_spec.capabilities.supportsFunctionCalling plus optimizedForCode and a privacy tag. Default is 256k ctx at $0.35/$1.50, tagged private + optimizedForCode. Other private+tools picks: zai-org-glm-5-1 (named in Venice's own docs for reliable function calling), zai-org-glm-5-2 (1M ctx), kimi-k2-7-code (256k), qwen3-6-35b-a3b (budget, $0.15/$1.00). TRAP 1 — NEVER use an e2ee-* model id: six of them report supportsFunctionCalling:true, but Venice's E2EE limitations table states 'Function calling | Not supported'. The catalog flag describes the underlying model; E2EE mode disables tools regardless, and also requires streaming. TRAP 2 — non-E2EE models that are tools:false: grok-4-20-multi-agent, hermes-3-llama-3.1-405b. TRAP 3 — include_venice_system_prompt defaults to TRUE, prepending Venice's own uncensored-tuned system prompt to yours, which is prompt contamination for an agent loop; under cannot send venice_parameters, but Venice documents a model-id suffix form (append ':include_venice_system_prompt=false' to the model id) — documented but untested through under. No API free tier; default rate limits are generous (L-tier 20 rpm / 500k tpm).",
+    "privacy": "Strong for the right tier, and machine-checkable. 'Venice does not store or log prompt and response content for normal inference.' Each model carries privacy:'private' (zero data retention, contract-enforced) or privacy:'anonymized' ('Prompt content is still visible to that provider'). FOR CODE, USE ONLY private MODELS — every Claude/GPT/Gemini id on Venice is anonymized, meaning your repo still reaches Anthropic/OpenAI."
+  },
+  "near-ai": {
+    "baseUrl": "https://cloud-api.near.ai/v1",
+    "authEnv": "NEAR_AI_API_KEY",
+    "defaultModel": "zai-org/GLM-5.1-FP8",
+    "toolCalling": true,
+    "notes": "TEE inference with the widest open-model roster. The public /v1/models exposes supported_features per model — filter on BOTH 'tools' in supported_features AND is_ready:true, because only 9 of 47 catalog entries are actually serving. Ready + tools, USD per 1M: zai-org/GLM-5.1-FP8 (202k, $1.40/$4.40), Qwen/Qwen3.6-35B-A3B-FP8 (262k, $0.17/$1.10), moonshotai/kimi-k2.6 (262k, $0.81/$3.85), openai/gpt-oss-120b (131k, $0.15/$0.55), deepseek-ai/DeepSeek-V4-Flash (1M, $0.17/$0.35). The one ready model WITHOUT tools is Qwen/Qwen3-VL-30B-A3B-Instruct (also only 16,384 ctx) — do not pick it. QUIRK: responses carry non-standard reasoning_content on the message and usage.reasoning_tokens; harmless if ignored. NEAR_AI_API_KEY is a convention — the docs use a literal YOUR_API_KEY placeholder and name no env var. Also available: per-model direct-to-enclave endpoints of the form https://<slug>.completions.near.ai/v1 ('one hop, one TEE to verify'). No free tier — buy credits at cloud.near.ai.",
+    "privacy": "TEE-backed. 'no one—not the cloud provider, not the model provider, not even NEAR AI can access your data.' Intel TDX + NVIDIA confidential computing with on-chain attestation."
+  },
+  "chutes": {
+    "baseUrl": "https://llm.chutes.ai/v1",
+    "authEnv": "CHUTES_API_KEY",
+    "defaultModel": "zai-org/GLM-5.2-TEE",
+    "toolCalling": true,
+    "notes": "Decentralized (Bittensor) inference whose entire public catalog is currently TEE-only — all 14 unauthenticated-visible models are confidential_compute:true. Chutes' own guidance says to filter on that flag rather than the -TEE name suffix. 12 of the 14 support tools; the two exceptions are unsloth/Mistral-Nemo-Instruct-2407-TEE and Nemotron-3-Nano-Omni-30B-TEE (both supported_features:null). Verified picks, USD per 1M: zai-org/GLM-5.2-TEE (1M ctx, $1.25/$3.95), moonshotai/Kimi-K2.6-TEE (262k, $0.66/$3.50), MiniMaxAI/MiniMax-M2.5-TEE (196k, $0.15/$1.20), Qwen/Qwen3.6-27B-TEE (262k, $0.30/$2.00). AUTH: Bearer with a cpk_-prefixed key only — the docs state X-API-Key 'is not a supported inference auth scheme', and keyless requests hit an anonymous rate-limit path that returns 429. api.chutes.ai is management-only; llm.chutes.ai is the inference host. Every entry also carries TAO prices alongside USD and accounts can be funded from a Bittensor wallet. Current free/subsidized limits could not be confirmed from a Chutes-owned page.",
+    "privacy": "Explicit and quotable. 'We do not log, store, or persist the content of your API requests or responses.' Retained: 'Timestamps, durations, token counts, model identifiers, and stop reasons.'"
+  },
+  "redpill": {
+    "baseUrl": "https://api.redpill.ai/v1",
+    "authEnv": "REDPILL_API_KEY",
+    "defaultModel": "z-ai/glm-5.2",
+    "toolCalling": true,
+    "notes": "TEE router — one key over four enclave backends (phala, near-ai, chutes, tinfoil), with attestation on demand at /v1/attestation/report. Keys are shaped sk-rp-*. 66 models in the public catalog, 28 with is_tee:true. CHECK TOOLS PER MODEL, NOT PER PROVIDER: several strong TEE entries report tools:false and would silently break the agent loop — qwen/qwen3.6-27b, deepseek/deepseek-v4-flash, qwen/qwen3.5-122b-a10b, google/gemma-4-31b-it. Verified TEE + tools, USD per 1M: z-ai/glm-5.2 (1M ctx, $1.40/$4.40), moonshotai/kimi-k2.6 (262k, $1.09/$4.60), openai/gpt-oss-120b (131k, $0.15/$0.60), qwen/qwen3.5-397b-a17b (262k, $0.55/$3.50). SOVEREIGNTY UPGRADE: use https://tee.redpill.ai/v1 instead — it rejects non-attested models with 404 and forces attested serving, i.e. it fails closed rather than silently falling back to non-confidential inference. No free tier.",
+    "privacy": "Marketed as zero data retention with E2EE v2 (AES-256-GCM, secp256k1), but NO standalone Redpill privacy policy with quotable retention language exists — the guarantee is inherited from the underlying enclave operators. Rated LIKELY, not verified. Prefer the tee.redpill.ai host so the attestation is enforced rather than assumed."
+  },
+  "privatemode": {
+    "baseUrl": "http://localhost:8080/v1",
+    "authEnv": "OPENAI_API_KEY",
+    "defaultModel": "gpt-oss-120b",
+    "toolCalling": true,
+    "notes": "The only real free tier here, and it is local-first by construction. You run the proxy yourself: `docker run -p 8080:8080 ghcr.io/edgelesssys/privatemode/privatemode-proxy:latest --apiKey <your-key>` — the proxy encrypts prompts client-side before anything leaves your machine, so your Privatemode key goes to the PROXY, not to under; under just needs any non-empty --api-key value. https://api.privatemode.ai/v1 exists (401 unauthenticated) but is the ciphertext backend, not the interface you use. /v1/models returns a tasks array per model containing 'tool_calling'; both gpt-oss-120b and gemma-4-31b list it. DOCUMENTED OPENAI INCOMPATIBILITIES (the most precise of any provider here): tool_choice supports ONLY 'auto' and 'none' — 'The option required is currently not supported'; the deprecated functions / function_call params are unsupported. Follows the vLLM tool-calling spec. Free tier: 'Initial 5M chat tokens on sign-up... No credit card required', plus 'an additional 1 million tokens every month'. Then PAYG: gpt-oss-120b EUR0.43/EUR1.70 per 1M, kimi-k2.6 EUR1.55/EUR7.74. Small roster: kimi-k2.6, gpt-oss-120b, gemma-4-31b. PORT COLLISION: 8080 is also llama.cpp's and mlx_lm.server's default.",
+    "privacy": "Confidential computing with verifiable attestation, EU-hosted (Edgeless Systems, Germany). Uniquely, 'function definitions, invocations, and results are encrypted' — the only provider found that encrypts tool-call payloads client-side."
+  },
+  "nous": {
+    "baseUrl": "https://inference-api.nousresearch.com/v1",
+    "authEnv": "NOUS_API_KEY",
+    "defaultModel": "qwen/qwen3-coder-next",
+    "toolCalling": true,
+    "notes": "Primarily a GATEWAY to third-party models rather than a first-party Hermes host — the catalog is mostly non-Nous (qwen, deepseek, etc.), which is what you should point under at. CRITICAL: do NOT select the Hermes models here (nousresearch/hermes-4-70b, hermes-4-405b) — they do not list tools/tool_choice in supported_parameters, so an agent loop will talk and never act. Verify any id with `under doctor` before relying on it.",
+    "privacy": "UNCONFIRMED — do not treat as a sovereignty option. Privacy Mode is reportedly a setting you must ENABLE, after which Nous will not store inference payloads or use them 'for training, product improvement, or support purposes' except for security/legal/fraud; it 'does not prevent collection, storage, or use of operational metadata' and 'may apply only on a prospective basis'. That language could NOT be quoted from a rendered page — portal.nousresearch.com sits behind a bot checkpoint returning 429 to non-browser clients. Verify before relying on it."
+  },
+  "lmstudio": {
+    "baseUrl": "http://localhost:1234/v1",
+    "authEnv": "OPENAI_API_KEY",
+    "defaultModel": "qwen3-coder-30b-a3b-instruct",
+    "toolCalling": true,
+    "notes": "Recommended local default; matches under's own built-in lmstudio endpoint, so `under --lmstudio` works without --base-url. No auth by default (0.4.0+ adds optional API tokens); any placeholder --api-key value is fine. defaultModel is a placeholder — the served id is whatever you loaded: `curl -s http://localhost:1234/v1/models | jq -r '.data[].id'`. CONTEXT: set it explicitly with `lms load <key> --context-length 131072`, and set contextOverflowPolicy to stopAtLimit — the alternatives (truncateMiddle, rollingWindow) SILENTLY eat your tool history instead of erroring. JIT-loaded models use per-model defaults rather than your CLI flags, carry a 60-minute idle TTL, and auto-evict keeps at most one loaded. TOOL CALLING IS TWO-TIER: models with trained tool templates get native parsing; everything else gets a synthetic [TOOL_REQUEST]{...}[END_TOOL_REQUEST] system prompt, and 'Smaller models and models that were not trained for tool use may output improperly formatted tool calls, resulting in LM Studio being unable to parse them into the tool_calls field' — the text then falls through into content as plain prose. Detect capability with GET /api/v1/models -> capabilities.trained_for_tool_use (the older /api/v0 capabilities array is superseded). DO NOT rely on tool_choice:'required' — it is llama.cpp-engine-only and has an open bug (#2115) returning tool-call XML in message.content. `lms daemon up` starts llmster, the headless daemon with parallel inference — the right thing for `under fan-out`.",
+    "privacy": "Local — nothing leaves the machine. Binds 127.0.0.1 by default (LMS_SERVER_HOST / --bind to change)."
+  },
+  "llamacpp": {
+    "baseUrl": "http://127.0.0.1:8080/v1",
+    "authEnv": "OPENAI_API_KEY",
+    "defaultModel": "Qwen3.6-27B",
+    "toolCalling": true,
+    "notes": "Most controllable local runtime. Start with: `llama-server --jinja -fa -c 65536 -np 1 -hf unsloth/Qwen3.6-27B-GGUF:UD-Q4_K_XL --port 8080 --api-key local`. PASS --jinja EXPLICITLY even though it now shows '(default: enabled)' — the flip is recent and any distro/Homebrew build predating it still requires the flag. Use -a/--alias to pin the served model name; otherwise it derives from the file path. CONTEXT IS PER SLOT, NOT PER SERVER: n_ctx_seq = n_ctx / n_seq_max, so `-c 32768 -np 4` gives each request only 8192 tokens. Set -c explicitly and leave -np at auto, or pass -kvu; read the startup line 'n_ctx_slot = ...'. GET /props exposes default_generation_settings.n_ctx. NATIVE tool formats: Llama 3.1/3.2/3.3, Functionary v3.1/v3.2, Hermes 2/3, Qwen 2.5 (+Coder), Mistral Nemo, FireFunction v2, Command R7B; DeepSeek R1 is WIP. Everything newer — including Qwen3.6 — falls back to the Generic handler, which 'may consume more tokens and be less efficient'; check the log for 'Chat format: Generic'. Parallel tool calls are OFF by default (send parallel_tool_calls:true). NEVER use --skip-chat-parsing (it forces everything, including tool calls, into content). AVOID builds between PR #18675 and PR #20213 (fixed 2026-03-08): they returned tool_calls[].function.arguments as a parsed object instead of a JSON string, crashing OpenAI-shaped clients. --reasoning-format defaults to auto; deepseek mode puts thoughts in the non-OpenAI reasoning_content field — use --reasoning-format none if content comes back empty. NEVER quantize the KV cache below q8_0: 'Beware of extreme KV quantizations (e.g. -ctk q4_0), they can substantially degrade the model's tool calling performance.' Also exposes an Anthropic-compatible POST /v1/messages. PORT COLLISION: 8080 is also mlx_lm.server's and Privatemode's proxy default.",
+    "privacy": "Local — nothing leaves the machine. --host defaults to 127.0.0.1."
+  },
+  "ollama": {
+    "baseUrl": "http://localhost:11434/v1",
+    "authEnv": "OPENAI_API_KEY",
+    "defaultModel": "qwen3-coder:30b",
+    "toolCalling": true,
+    "notes": "Easiest to install, most dangerous default — matches under's built-in ollama endpoint, so `under --ollama` works. The API key is required but ignored ('ollama' is fine). THE 4K TRAP: Ollama's default context is VRAM-scaled — '< 24 GiB VRAM: 4k context, 24-48 GiB: 32k, >= 48 GiB: 256k' — and on overflow it SILENTLY drops tokens from the beginning with no error and no response field, eating your system prompt and earlier tool-call/result pairs first. The symptom looks like 'the agent forgot its tools'. You CANNOT raise it over the OpenAI-compatible API (num_ctx is not in openai.ChatCompletionRequest). Fix server-side: `OLLAMA_CONTEXT_LENGTH=65536 ollama serve`, or bake PARAMETER num_ctx into a Modelfile and `ollama create`. Ollama's own docs say agent and coding tools 'should be set to at least 64000 tokens'. VERIFY with GET /api/ps -> models[].context_length (what is actually running) versus POST /api/show -> model_info['<arch>.context_length'] (what the model could do). tool_choice IS EXPLICITLY UNSUPPORTED (along with logit_bias, n, user, logprobs, and image URLs — base64 only), so you cannot force a call. Tools are per-model: a model without a tool template returns a hard 400 '<model> does not support tools'; detect with POST /api/show -> capabilities contains 'tools'. Docs warn the simple pattern is 'only recommended for models which only return a single tool call' and advise telling the model it is in a loop. Verified-real tool-capable tags: qwen3-coder:30b, qwen3-coder:480b, qwen3.6:27b, gemma4:12b, gemma4:26b, devstral-2:123b. TRAPS: minimax-m2.5 exists only as a :cloud tag (not local); and no Qwen3.5 GGUF works in Ollama due to separate mmproj vision files — use a llama.cpp-compatible backend for those.",
+    "privacy": "Local — nothing leaves the machine. Bind via OLLAMA_HOST."
+  },
+  "vllm": {
+    "baseUrl": "http://localhost:8000/v1",
+    "authEnv": "VLLM_API_KEY",
+    "defaultModel": "Qwen/Qwen3.6-27B",
+    "toolCalling": true,
+    "notes": "Throughput option. Tool calling is OPT-IN and requires BOTH flags: `vllm serve Qwen/Qwen3.6-27B --port 8000 --max-model-len 131072 --enable-auto-tool-choice --tool-call-parser qwen3_xml --api-key local`. USE qwen3_xml FOR QWEN3, NOT qwen3_coder — vLLM's own docs specify qwen3_xml; qwen3_coder in vLLM is the older NON-STREAMING regex parser with a documented failure (infinite stream of '!!!!!!'). The Qwen3.6-27B model card prints qwen3_coder and is wrong for vLLM (it is correct for SGLang). THE FAILURE MODE HAS INVERTED: older vLLM returned a clean HTTP 400 naming the missing flags; current main accepts the request and returns 200 with NO tool_calls field at all, silently. Startup still guards the half-config ('--enable-auto-tool-choice requires --tool-call-parser'). ESCAPE HATCH: tool_choice:'required' and named tool choice work WITHOUT those flags, via structured outputs, on any supported model. Other parsers: hermes, mistral, llama3_json, llama4_pythonic, granite, granite4, internlm, jamba, deepseek_v3, deepseek_v31, openai, kimi_k2, glm45, glm47, functiongemma, olmo3, pythonic, xlam. --max-model-len defaults to the model config; --served-model-name overrides the API-visible id. Responses may carry reasoning_content (being deprecated in favour of reasoning) — handle both keys if under ever renders reasoning. On Apple Silicon, vllm-metal is a COMMUNITY plugin (not official vLLM), requires native arm64 Python 3.12, and is not GA.",
+    "privacy": "Local / self-hosted — nothing leaves your infrastructure. --api-key (or VLLM_API_KEY) enforces auth; without it the server is open."
+  },
+  "sglang": {
+    "baseUrl": "http://127.0.0.1:30000/v1",
+    "authEnv": "OPENAI_API_KEY",
+    "defaultModel": "Qwen/Qwen3.6-27B",
+    "toolCalling": true,
+    "notes": "vLLM alternative for dedicated GPUs. Start: `python3 -m sglang.launch_server --model-path Qwen/Qwen3.6-27B --tool-call-parser qwen3_coder --context-length 131072 --api-key local`. HERE qwen3_coder IS CORRECT — the same parser name is right on SGLang and wrong on vLLM (which needs qwen3_xml). Do not share a snippet between the two runtimes. Default host 127.0.0.1, default port 30000 (many model cards pin --port 8000 instead — check yours). --context-length defaults to the model's config.json. Streaming tool calls are supported. Registered parsers include qwen, qwen25 (NOT deprecated — both are registered to the same class, contrary to a common claim), qwen3_coder, hermes, gemma4, glm, glm45, gpt-oss, kimi_k2, llama3, llama4, mistral, pythonic, deepseekv3/v31/v32/v4, minimax-m2, minimax-m3, cohere_command4, step3, apertus2509. NOTE an unresolved upstream tension: SGLang's table maps 'qwen' to 'Qwen series (except Qwen3-Coder)' and 'qwen3_coder' to Qwen3-Coder only, yet the Qwen3.6-27B card (not a Coder model) tells you to use qwen3_coder — test both and confirm tool_calls is actually populated. Like vLLM, responses may carry the deprecating reasoning_content field.",
+    "privacy": "Local / self-hosted — nothing leaves your infrastructure. --api-key and --admin-api-key available."
+  },
+  "jan": {
+    "baseUrl": "http://127.0.0.1:1337/v1",
+    "authEnv": "OPENAI_API_KEY",
+    "defaultModel": "",
+    "toolCalling": true,
+    "notes": "Desktop runtime with llama.cpp under the hood. Server is ready when the logs show 'JAN API listening at http://127.0.0.1:1337'. POST /v1/chat/completions 'Supports streaming, tool calling, and multi-turn conversations'; GET /v1/models lists what is served (defaultModel is intentionally blank — read the id off /v1/models). Also exposes an Anthropic-compatible POST /v1/messages; /v1/responses is 'coming soon'. Auth is Bearer with a key you set; 'Leave the field empty to disable authentication', explicitly not recommended when binding 0.0.0.0. LEAVE 'Execute Tools on Server' OFF (it is off by default) — when enabled, MCP tool calls made through /v1/chat/completions are executed server-side rather than returned to the client, which would intercept calls under expects to handle itself. Context-length configuration is not documented in Jan's own docs; since it is llama.cpp-backed, the per-slot arithmetic (n_ctx_seq = n_ctx / n_seq_max) very likely applies. Started from Settings -> Local API Server -> Start Server; no documented headless CLI.",
+    "privacy": "Local — nothing leaves the machine. Binds 127.0.0.1 by default."
+  },
+  "mlx": {
+    "baseUrl": "http://127.0.0.1:8080/v1",
+    "authEnv": "OPENAI_API_KEY",
+    "defaultModel": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-8bit",
+    "toolCalling": true,
+    "notes": "Leanest Apple Silicon path, but the narrowest tool-calling coverage — read this before choosing a model. Start: `mlx_lm.server --model mlx-community/Qwen3-Coder-30B-A3B-Instruct-8bit --port 8080 --max-tokens 8192`. RAISE --max-tokens: IT DEFAULTS TO 512, which truncates generations — including tool-call JSON — mid-argument. There is no context flag and no context cap; MLX has no pre-allocated KV budget, so context is bounded only by RAM. TOOL PARSING IS PER-FAMILY: mlx_lm/tool_parsers/ contains function_gemma, gemma4, glm47, json_tools, kimi_k2, longcat, minimax_m2, mistral, pythonic, qwen3_coder. If your model's family is not in that list, tool_parser is None and tool calls land in content as raw text. OPEN ISSUE #1293: there is NO parser for standard Qwen3.5/3.6 (non-Coder) — the server returns EMPTY CONTENT when tools are provided. The flagship local coding models do not work here; stick to a listed family (the default above uses qwen3_coder and is the safe choice). Parse failures are logged server-side ('Failed to parse tool call... tool text was likely truncated mid-generation') but are silent over the wire. The docs warn the server 'is not recommended for production as it only implements basic security checks' — bind to loopback only. Other verified mlx-community ids: Qwen3-Coder-30B-A3B-Instruct-4bit, Qwen3-Coder-Next-8bit, gemma-4-12B-it-qat-4bit, gemma-4-26b-a4b-it-4bit. PORT COLLISION: 8080 is also llama.cpp's default. PERFORMANCE NOTE: llama.cpp is not slower than MLX on Apple Silicon — measured on an M5 Max at 64k with Qwen3.6-27B 8-bit, MLX 17 tok/s vs llama.cpp 18 tok/s (32 tok/s with MTP).",
+    "privacy": "Local, Apple Silicon only — nothing leaves the machine. No auth; --host defaults to 127.0.0.1."
+  },
+  "koboldcpp": {
+    "baseUrl": "http://localhost:5001/v1",
+    "authEnv": "OPENAI_API_KEY",
+    "defaultModel": "",
+    "toolCalling": true,
+    "notes": "Single portable binary, no install. Start: `./koboldcpp --model ./model.gguf --contextsize 65536 --port 5001 --host 127.0.0.1 --password local`. 'An OpenAI compatible API is also provided at /v1 route (e.g. http://localhost:5001/v1)', and the feature list confirms 'MCP Server support and tool calling'. defaultModel is intentionally blank — the served id depends on the GGUF you load. SET --host EXPLICITLY: it defaults to '' which means ALL routable interfaces, not loopback. Context defaults to 12288 (range 256-524288) — raise it with --contextsize/-c for an agent loop. Auth via --password (env KCPP_PASSWORD), which secures the text endpoints (image endpoints are not secured). The implementation is real rather than a stub (native parse_chat_tool_calls, tool_choice auto/required coercion, coerce_tool_argtypes), but those internals were not independently re-verified — the base URL and the existence of tool calling were. Needs a reasonably capable model.",
+    "privacy": "Local — nothing leaves the machine, but note the all-interfaces bind default above."
+  }
+}
