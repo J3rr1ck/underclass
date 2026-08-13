@@ -4,6 +4,7 @@ use std::process::Command;
 use std::time::Duration;
 use crate::config::{check_endpoint, DEFAULT_DANGER_BASE};
 use crate::engines::discover_all_local_engines;
+use crate::project_rules::{inspect_project, Severity};
 
 pub struct DoctorOptions {
     pub offline: bool,
@@ -52,6 +53,24 @@ pub async fn run_doctor(opts: DoctorOptions) {
     check_tool("neofetch", &["--version"], false, "Legacy fetch tool");
     check_tool("node", &["--version"], false, "Node 22.19+ recommended for legacy compatibility");
     check_tool("gh", &["--version"], false, "GitHub CLI for fan-out --pr");
+
+    // 1.5 Project Readiness Findings
+    println!("\n{}", "[Project Readiness & Static Rules]".bold());
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let proj = inspect_project(&cwd);
+    if proj.findings.is_empty() {
+        println!("  {} All static project readiness checks passed.", "✓".green());
+    } else {
+        for f in &proj.findings {
+            let mark = match f.severity {
+                Severity::Blocker => "✗".red().bold(),
+                Severity::Risk => "!".yellow().bold(),
+                Severity::Note => "·".cyan(),
+            };
+            println!("  {mark} [{}] {}", f.id.bold(), f.what);
+            println!("    Fix: {}", f.fix.dimmed());
+        }
+    }
 
     if opts.benchmark {
         println!("\n{}", "[Container Runtime]".bold());

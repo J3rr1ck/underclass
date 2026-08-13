@@ -7,11 +7,15 @@ use reqwest::Client;
 use crate::config::under_dir;
 
 pub const OPENROUTER_BASE: &str = "https://openrouter.ai/api/v1";
+pub const CATALOGUE_TTL_SECS: u64 = 6 * 3600;
+pub const RATE_LIMIT_COOLDOWN_SECS: u64 = 5 * 60;
+pub const DEAD_COOLDOWN_SECS: u64 = 60 * 60;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FreeModel {
     pub id: String,
     pub name: Option<String>,
+    #[serde(rename = "contextLength")]
     pub context_length: usize,
     pub tools: bool,
     pub reasoning: bool,
@@ -26,6 +30,7 @@ pub struct ModelHealth {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FreeModelsCache {
+    #[serde(rename = "fetchedAt")]
     pub fetched_at: u64,
     pub models: Vec<FreeModel>,
     pub health: HashMap<String, ModelHealth>,
@@ -55,6 +60,11 @@ pub fn write_free_cache(cache: &FreeModelsCache) {
 }
 
 pub async fn fetch_free_models(client: &Client) -> Result<Vec<FreeModel>, String> {
+    let cache = read_free_cache();
+    if now_secs().saturating_sub(cache.fetched_at) < CATALOGUE_TTL_SECS && !cache.models.is_empty() {
+        return Ok(cache.models);
+    }
+
     let url = format!("{OPENROUTER_BASE}/models?supported_parameters=tools");
     let resp = client.get(&url)
         .header("user-agent", "underclass/0.1.0-alpha.1")
@@ -64,6 +74,9 @@ pub async fn fetch_free_models(client: &Client) -> Result<Vec<FreeModel>, String
         .map_err(|e| format!("Failed to reach OpenRouter: {e}"))?;
 
     if !resp.status().is_success() {
+        if !cache.models.is_empty() {
+            return Ok(cache.models);
+        }
         return Err(format!("OpenRouter /models returned HTTP {}", resp.status()));
     }
 
@@ -77,30 +90,90 @@ pub async fn fetch_free_models(client: &Client) -> Result<Vec<FreeModel>, String
                 None => continue,
             };
             let pricing = m.get("pricing");
-            let prompt_price = pricing.and_then(|p| p.get("prompt")).and_then(|v| v.as_str()).unwrap_or("1");
-            let completion_price = pricing.and_then(|p| p.get("completion")).and_then(|v| v.as_str()).unwrap_or("1");
+            let prompt_str = pricing.and_then(|p| p.get("prompt")).and_then(|v| v.as_str()).unwrap_or("1");
+            let completion_str = pricing.and_then(|p| p.get("completion")).and_then(|v| v.as_str()).unwrap_or("1");
 
-            let is_free = prompt_price == "0" && completion_price == "0";
-            if is_free {
+            let prompt_price: f64 = prompt_str.parse().unwrap_or(1.0);
+            let completion_price: f64 = completion_str.parse().unwrap_or(1.0);
+
+            if prompt_price == 0.0 && completion_price == 0.0 {
                 let name = m.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
-                let ctx = m.get("context_length").and_then(|c| c.as_u64()).unwrap_or(8192) as usize;
-                let reasoning = m.get("architecture").and_then(|a| a.get("instruct_type")).map_or(false, |it| it == "reasoning");
+                let top_ctx = m.get("top_provider").and_then(|tp| tp.get("context_length")).and_then(|c| c.as_u64());
+                let main_ctx = m.get("context_length").and_then(|c| c.as_u64());
+                let ctx = top_ctx.or(main_ctx).unwrap_or(8192) as usize;
 
-                free.push(FreeModel {
-                    id: id.to_string(),
-                    name,
-                    context_length: ctx,
-                    tools: true,
-                    reasoning,
-                });
+                let params = m.get("supported_parameters").and_then(|p| p.as_array());
+                let has_tools = params.map_or(false, |arr| arr.iter().any(|v| v.as_str() == Some("tools")));
+                let has_reasoning = params.map_or(false, |arr| arr.iter().any(|v| v.as_str() == Some("reasoning")));
+
+                if has_tools {
+                    free.push(FreeModel {
+                        id: id.to_string(),
+                        name,
+                        context_length: ctx,
+                        tools: true,
+                        reasoning: has_reasoning,
+                    });
+                }
             }
         }
     }
 
-    let mut cache = read_free_cache();
-    cache.fetched_at = now_secs();
-    cache.models = free.clone();
-    write_free_cache(&cache);
+    free.sort_by(|a, b| b.context_length.cmp(&a.context_length));
+
+    let updated_cache = FreeModelsCache {
+        fetched_at: now_secs(),
+        models: free.clone(),
+        health: cache.health,
+    };
+    write_free_cache(&updated_cache);
 
     Ok(free)
+}
+
+pub fn record_model_result(id: &str, status: u16) {
+    let mut cache = read_free_cache();
+    if (200..300).contains(&status) {
+        cache.health.remove(id);
+        write_free_cache(&cache);
+        return;
+    }
+
+    let rate_limited = status == 429;
+    let cooldown = if rate_limited { RATE_LIMIT_COOLDOWN_SECS } else { DEAD_COOLDOWN_SECS };
+    let reason = if rate_limited {
+        "rate-limited (free-tier quota)".to_string()
+    } else {
+        format!("unavailable ({status})")
+    };
+    let kind = if rate_limited { "rate-limited".to_string() } else { "dead".to_string() };
+
+    cache.health.insert(id.to_string(), ModelHealth {
+        until: now_secs() + cooldown,
+        reason,
+        kind,
+    });
+
+    write_free_cache(&cache);
+}
+
+pub fn pick_free_model(models: &[FreeModel], prefer: &[String]) -> Option<FreeModel> {
+    let cache = read_free_cache();
+    let now = now_secs();
+    let usable: Vec<FreeModel> = models.iter()
+        .filter(|m| m.tools && !cache.health.get(&m.id).map_or(false, |h| now < h.until))
+        .cloned()
+        .collect();
+
+    if usable.is_empty() {
+        return None;
+    }
+
+    for pref_id in prefer {
+        if let Some(hit) = usable.iter().find(|m| &m.id == pref_id) {
+            return Some(hit.clone());
+        }
+    }
+
+    usable.first().cloned()
 }
