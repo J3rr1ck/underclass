@@ -14,10 +14,41 @@ pub struct DoctorOptions {
 pub async fn run_doctor(opts: DoctorOptions) {
     println!("{}", "=== Underclass Phased Health Check ===".bold().cyan());
 
+    // 0. System Fetch & Hardware Profile (Prefers fastfetch > hyfetch > pfetch > ufetch > neofetch)
+    println!("\n{}", "[System & Hardware Profile]".bold());
+    let fetch_tools = ["fastfetch", "hyfetch", "pfetch", "ufetch", "neofetch", "cpufetch", "onefetch"];
+    let mut found_fetch = false;
+
+    for tool in fetch_tools {
+        let output = Command::new(tool).arg("--version").output();
+        if let Ok(out) = output {
+            if out.status.success() {
+                let version = String::from_utf8_lossy(&out.stdout);
+                let first_line = version.lines().next().unwrap_or("").trim();
+                println!("  {} Using preferred system fetch utility: {} ({})", "✓".green(), tool.bold().cyan(), first_line.dimmed());
+
+                // Run fastfetch / chosen fetch utility in pipe-friendly mode or summary
+                if let Ok(fetch_out) = Command::new(tool).arg("--pipe").output().or_else(|_| Command::new(tool).output()) {
+                    let fetch_str = String::from_utf8_lossy(&fetch_out.stdout);
+                    for line in fetch_str.lines().take(8) {
+                        println!("    {}", line.dimmed());
+                    }
+                }
+                found_fetch = true;
+                break;
+            }
+        }
+    }
+
+    if !found_fetch {
+        println!("  {} No system fetch utility found (fastfetch recommended).", "·".dimmed());
+    }
+
     // 1. Tool checks
     println!("\n{}", "[Toolchain & Environment]".bold());
     check_tool("git", &["--version"], true, "Install git");
     check_tool("rg", &["--version"], true, "Install ripgrep: brew install ripgrep / cargo install ripgrep");
+    check_tool("fastfetch", &["--version"], false, "Recommended neofetch replacement (brew install fastfetch)");
     check_tool("node", &["--version"], false, "Node 22.19+ recommended for legacy compatibility");
     check_tool("gh", &["--version"], false, "GitHub CLI for fan-out --pr");
 

@@ -16,6 +16,8 @@ pub fn get_install_hints() -> HashMap<&'static str, InstallHint> {
     h.insert("tree", InstallHint { brew: Some("brew install tree"), apt: Some("apt install tree"), note: None });
     h.insert("wget", InstallHint { brew: Some("brew install wget"), apt: Some("apt install wget"), note: Some("curl is already installed and does the same job") });
     h.insert("htop", InstallHint { brew: Some("brew install htop"), apt: Some("apt install htop"), note: None });
+    h.insert("fastfetch", InstallHint { brew: Some("brew install fastfetch"), apt: Some("apt install fastfetch"), note: Some("High-performance C-based neofetch alternative") });
+    h.insert("neofetch", InstallHint { brew: Some("brew install fastfetch"), apt: Some("apt install fastfetch"), note: Some("neofetch is archived — fastfetch is preferred") });
     h.insert("docker", InstallHint { brew: Some("brew install --cask orbstack"), apt: None, note: Some("OrbStack is lighter than Docker Desktop on Apple Silicon") });
     h.insert("podman", InstallHint { brew: Some("brew install podman"), apt: None, note: None });
     h.insert("python", InstallHint { brew: None, apt: None, note: Some("macOS ships `python3`, not `python`. Try `python3`, or `brew install python`") });
