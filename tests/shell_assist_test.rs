@@ -1,5 +1,5 @@
 use underclass::shell::assist::{endpoint_down_reason, mark_endpoint_down};
-use underclass::shell::install::{detect_installed_shells, stage_assets, ShellType};
+use underclass::shell::install::{detect_installed_shells, stage_assets, which_bin, ShellType};
 use underclass::shell::rules::suggest_install_hint;
 
 #[test]
@@ -9,6 +9,9 @@ fn test_shell_type_parsing() {
     assert_eq!(ShellType::parse("fish"), Some(ShellType::Fish));
     assert_eq!(ShellType::parse("nu"), Some(ShellType::Nushell));
     assert_eq!(ShellType::parse("nushell"), Some(ShellType::Nushell));
+    assert_eq!(ShellType::parse("sh"), Some(ShellType::Sh));
+    assert_eq!(ShellType::parse("adb"), Some(ShellType::Adb));
+    assert_eq!(ShellType::parse("android"), Some(ShellType::Adb));
     assert_eq!(ShellType::parse("unknown"), None);
 }
 
@@ -16,6 +19,18 @@ fn test_shell_type_parsing() {
 fn test_detect_installed_shells() {
     let shells = detect_installed_shells();
     assert!(!shells.is_empty());
+    assert!(shells.contains(&ShellType::Zsh));
+    assert!(shells.contains(&ShellType::Bash));
+    assert!(shells.contains(&ShellType::Fish));
+    assert!(shells.contains(&ShellType::Sh));
+    assert!(shells.contains(&ShellType::Adb));
+}
+
+#[test]
+fn test_which_bin_adb() {
+    let adb_path = which_bin("adb");
+    assert!(adb_path.is_some());
+    assert!(adb_path.unwrap().contains("adb"));
 }
 
 #[test]
@@ -28,6 +43,8 @@ fn test_stage_assets_multi_shell() {
     assert!(dir.join("danger.plugin.bash").exists());
     assert!(dir.join("danger.fish").exists());
     assert!(dir.join("danger.nu").exists());
+    assert!(dir.join("danger.plugin.sh").exists());
+    assert!(dir.join("bin").join("danger-adb").exists());
 }
 
 #[test]
