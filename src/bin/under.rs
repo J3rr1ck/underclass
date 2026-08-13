@@ -7,10 +7,10 @@ use std::time::Duration;
 use underclass::agent::r#loop::{run_agent_loop, AgentSession};
 use underclass::config::{pick_model_spec, write_models_json, KNOWN_PROVIDERS, ModelsJson, UnderOptions};
 use underclass::doctor::{run_doctor, DoctorOptions};
-use underclass::engines::LOCAL_ENGINES;
 use underclass::fanout::{commit_and_clean_worktree, create_worktree, FanOutTask};
 use underclass::free_models::fetch_free_models;
 use underclass::learn::run_learn;
+use underclass::planner::{format_plan_as_prompt, generate_plan};
 use underclass::preferences::remember_preference;
 use underclass::setup::run_setup;
 use underclass::stats::print_stats;
@@ -326,7 +326,25 @@ async fn main() {
     };
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    if let Err(e) = run_agent_loop(&session, &client, &prompt_text, &cwd, 25).await {
+
+    let is_planning = cli.plan || std::env::var("UNDERCLASS_PLANNING").is_ok();
+    let final_prompt = if is_planning {
+        println!("{}", "=== Generating Two-Tier Execution Plan ===".bold().magenta());
+        match generate_plan(&client, &session.base_url, &session.api_key, &session.model_id, &prompt_text, &cwd).await {
+            Ok(plan) => {
+                println!("{}", "=== Plan Generated ===".green());
+                format_plan_as_prompt(&plan)
+            }
+            Err(e) => {
+                eprintln!("{}", format!("Planning failed ({e}), falling back to direct prompt execution.").yellow());
+                prompt_text
+            }
+        }
+    } else {
+        prompt_text
+    };
+
+    if let Err(e) = run_agent_loop(&session, &client, &final_prompt, &cwd, 25).await {
         eprintln!("Agent loop failed: {e}");
     }
 }
