@@ -5,12 +5,14 @@ use std::process::Command;
 use std::time::Duration;
 use underclass::agent::r#loop::{run_agent_loop, AgentSession};
 use underclass::shell::assist::run_assist;
-use underclass::shell::install::{install_zsh_plugin, start_subshell, uninstall_zsh_plugin};
+use underclass::shell::install::{
+    detect_installed_shells, install_shell_plugin, start_subshell_for, uninstall_shell_plugin, ShellType,
+};
 
 #[derive(Parser)]
 #[command(name = "danger")]
 #[command(version = "0.1.0-alpha.1")]
-#[command(about = "AI-assisted command runner and zsh shell integration (Rust rewrite)", long_about = None)]
+#[command(about = "AI-assisted command runner and multi-shell integration (Rust rewrite)", long_about = None)]
 struct Cli {
     #[arg(long)]
     yolo: bool,
@@ -53,15 +55,24 @@ enum Commands {
         #[arg(long)]
         hint: bool,
     },
-    /// Subshell with danger integration enabled
-    Shell,
-    /// Install zsh integration into ~/.zshrc
+    /// Interactive subshell with danger integration enabled (zsh, bash, fish, nu)
+    Shell {
+        #[arg(long)]
+        shell: Option<String>,
+    },
+    /// Install shell integration (~/.zshrc, ~/.bashrc, ~/.config/fish, ~/.config/nushell)
     Init {
+        #[arg(long)]
+        shell: Option<String>,
+
         #[arg(long)]
         login_shell: bool,
     },
-    /// Uninstall zsh integration from ~/.zshrc
-    UninstallShell,
+    /// Uninstall shell integration
+    UninstallShell {
+        #[arg(long)]
+        shell: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -109,18 +120,51 @@ async fn main() {
             Commands::Assist { input, hint } => {
                 run_assist(&input, hint).await;
             }
-            Commands::Shell => {
-                let code = start_subshell();
+            Commands::Shell { shell } => {
+                let target = shell
+                    .as_deref()
+                    .and_then(ShellType::parse)
+                    .unwrap_or_else(|| detect_installed_shells().first().copied().unwrap_or(ShellType::Zsh));
+                let code = start_subshell_for(target);
                 std::process::exit(code);
             }
-            Commands::Init { login_shell } => {
-                if let Err(e) = install_zsh_plugin(login_shell) {
-                    eprintln!("Failed to install zsh plugin: {e}");
+            Commands::Init { shell, login_shell } => {
+                let targets = match shell.as_deref() {
+                    Some("all") => vec![ShellType::Zsh, ShellType::Bash, ShellType::Fish, ShellType::Nushell],
+                    Some(s) => {
+                        if let Some(parsed) = ShellType::parse(s) {
+                            vec![parsed]
+                        } else {
+                            eprintln!("Unknown shell '{s}', auto-detecting installed user shells.");
+                            detect_installed_shells()
+                        }
+                    }
+                    None => detect_installed_shells(),
+                };
+
+                for sh in targets {
+                    if let Err(e) = install_shell_plugin(sh, login_shell) {
+                        eprintln!("Failed to install {sh} plugin: {e}");
+                    }
                 }
             }
-            Commands::UninstallShell => {
-                if let Err(e) = uninstall_zsh_plugin() {
-                    eprintln!("Failed to uninstall zsh plugin: {e}");
+            Commands::UninstallShell { shell } => {
+                let targets = match shell.as_deref() {
+                    Some("all") => vec![ShellType::Zsh, ShellType::Bash, ShellType::Fish, ShellType::Nushell],
+                    Some(s) => {
+                        if let Some(parsed) = ShellType::parse(s) {
+                            vec![parsed]
+                        } else {
+                            detect_installed_shells()
+                        }
+                    }
+                    None => detect_installed_shells(),
+                };
+
+                for sh in targets {
+                    if let Err(e) = uninstall_shell_plugin(sh) {
+                        eprintln!("Failed to uninstall {sh} plugin: {e}");
+                    }
                 }
             }
         }

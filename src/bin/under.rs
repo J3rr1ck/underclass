@@ -80,7 +80,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Guided first-run setup: scan local engines, test reachability, save config
-    Setup,
+    Setup {
+        #[arg(long)]
+        shell: Option<String>,
+    },
     /// Phased readiness check for tools, endpoints, model context windows
     Doctor {
         #[arg(long)]
@@ -216,7 +219,7 @@ async fn main() {
 
     if let Some(cmd) = cli.command {
         match cmd {
-            Commands::Setup => run_setup().await,
+            Commands::Setup { shell } => run_setup(shell).await,
             Commands::Doctor { offline, deep, benchmark } => {
                 run_doctor(DoctorOptions { offline, deep, benchmark }).await;
             }

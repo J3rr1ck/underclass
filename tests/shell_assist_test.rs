@@ -1,5 +1,34 @@
 use underclass::shell::assist::{endpoint_down_reason, mark_endpoint_down};
+use underclass::shell::install::{detect_installed_shells, stage_assets, ShellType};
 use underclass::shell::rules::suggest_install_hint;
+
+#[test]
+fn test_shell_type_parsing() {
+    assert_eq!(ShellType::parse("zsh"), Some(ShellType::Zsh));
+    assert_eq!(ShellType::parse("bash"), Some(ShellType::Bash));
+    assert_eq!(ShellType::parse("fish"), Some(ShellType::Fish));
+    assert_eq!(ShellType::parse("nu"), Some(ShellType::Nushell));
+    assert_eq!(ShellType::parse("nushell"), Some(ShellType::Nushell));
+    assert_eq!(ShellType::parse("unknown"), None);
+}
+
+#[test]
+fn test_detect_installed_shells() {
+    let shells = detect_installed_shells();
+    assert!(!shells.is_empty());
+}
+
+#[test]
+fn test_stage_assets_multi_shell() {
+    let res = stage_assets();
+    assert!(res.is_ok());
+
+    let dir = underclass::shell::install::shell_dir();
+    assert!(dir.join("danger.plugin.zsh").exists());
+    assert!(dir.join("danger.plugin.bash").exists());
+    assert!(dir.join("danger.fish").exists());
+    assert!(dir.join("danger.nu").exists());
+}
 
 #[test]
 fn test_suggest_install_hint_known_tools() {
