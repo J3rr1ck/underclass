@@ -4,3 +4,4 @@ dist/under
 dist/danger
 *.tgz
 .underclass/
+scratch/
