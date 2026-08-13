@@ -1,0 +1,32 @@
+[package]
+name = "underclass"
+version = "0.1.0-alpha.1"
+edition = "2021"
+description = "Local-first coding agent (under) and AI-assisted command runner (danger) rewritten in Rust for maximum performance."
+license = "AGPL-3.0-only"
+
+[dependencies]
+tokio = { version = "1.40", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+clap = { version = "4.5", features = ["derive", "env"] }
+colored = "2.1"
+regex = "1.10"
+sha2 = "0.10"
+hex = "0.4"
+dirs = "5.0"
+chrono = "0.4"
+tempfile = "3.10"
+futures = "0.3"
+async-trait = "0.1"
+inquire = "0.7"
+
+[[bin]]
+name = "under"
+path = "src/bin/under.rs"
+
+[[bin]]
+name = "danger"
+path = "src/bin/danger.rs"

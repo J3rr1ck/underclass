@@ -1,20 +1,16 @@
 {
   "name": "underclass",
   "version": "0.1.0-alpha.1",
-  "description": "Local-first coding agent (under) and an AI-assisted command runner (danger). Works with any OpenAI-compatible endpoint.",
+  "description": "Local-first coding agent (under) and an AI-assisted command runner (danger). Rewritten in Rust for maximum performance.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "bin": {
-    "under": "dist/index.js",
+    "under": "dist/under.js",
     "danger": "dist/danger.js"
   },
-  "main": "dist/index.js",
-  "files": [
-    "dist",
-    "!dist/**/*.map"
-  ],
-  "publishConfig": {
-    "access": "public"
+  "scripts": {
+    "build": "cargo build --release && node scripts/copy-binaries.mjs",
+    "test": "cargo test"
   },
   "keywords": [
     "ai",
@@ -22,37 +18,21 @@
     "cli",
     "local-llm",
     "llm",
+    "rust",
     "openai-compatible",
     "lm-studio",
     "ollama",
+    "vllm",
+    "llamacpp",
+    "jan",
+    "localai",
+    "koboldcpp",
     "agent",
     "developer-tools"
   ],
-  "scripts": {
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
-    "prepack": "npm run clean && npm run build",
-    "dev": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node src/tools/edit-tools.test.mjs && node src/fanout.test.mjs && node src/workflow.test.mjs && node src/stall.test.mjs && node src/pool.test.mjs && node src/sched.test.mjs && node src/acceptance.test.mjs && node src/config.test.mjs && node src/shell/shell-rules.test.mjs && node src/shell/danger-why.test.mjs"
-  },
-  "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.10",
-    "typebox": "1.1.38"
-  },
-  "devDependencies": {
-    "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
-  },
-  "engines": {
-    "node": ">=22.19.0"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bunnycompany/underclass.git"
   },
-  "homepage": "https://permanent.sh",
-  "bugs": {
-    "url": "https://github.com/bunnycompany/underclass/issues"
-  }
+  "homepage": "https://permanent.sh"
 }
