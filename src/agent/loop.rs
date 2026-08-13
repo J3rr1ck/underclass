@@ -25,6 +25,11 @@ pub async fn run_agent_loop(
     max_turns: usize,
 ) -> Result<String, String> {
     let start_time = Instant::now();
+    let effective_max_turns = std::env::var("UNDERCLASS_MAX_TURNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(max_turns);
+
     println!("{}", format!("Starting task with model: {}/{}", session.provider, session.model_id).bold().cyan());
 
     // 1. Build System Prompt
@@ -66,74 +71,93 @@ pub async fn run_agent_loop(
         },
     ];
 
+    let mut turn = 0;
     let mut total_tokens_in = 0;
     let mut total_tokens_out = 0;
     let mut total_tool_calls = 0;
+    let mut used_tools: Vec<String> = Vec::new();
     let mut final_response = String::new();
 
-    let tools_schema = get_tools_schema();
+    while turn < effective_max_turns {
+        turn += 1;
+        println!("\n--- Agent Turn {turn} ---");
 
-    for turn in 1..=max_turns {
-        println!("{}", format!("\n--- Agent Turn {} ---", turn).bold().dimmed());
-
+        let tools = get_tools_schema();
         let req = ChatCompletionRequest {
             model: session.model_id.clone(),
             messages: messages.clone(),
-            tools: Some(tools_schema.clone()),
-            max_tokens: Some(session.max_tokens),
+            tools: Some(tools),
             temperature: Some(0.2),
+            max_tokens: Some(session.max_tokens),
         };
 
-        let response = match send_chat_completion(client, &session.base_url, &session.api_key, None, &req).await {
-            Ok(resp) => resp,
+        let resp = match send_chat_completion(client, &session.base_url, &session.api_key, None, &req).await {
+            Ok(r) => r,
             Err(e) => {
-                println!("  {} Turn failed: {}", "✗".red(), e);
+                let err_msg = format!("LLM request failed: {e}");
+                eprintln!("{}", err_msg.red());
+                let prompt_head = prompt.lines().next().unwrap_or(prompt).chars().take(80).collect::<String>();
                 record_run(&RunRecord {
-                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    ts: chrono::Utc::now().to_rfc3339(),
                     provider: session.provider.clone(),
                     model: session.model_id.clone(),
-                    prompt: prompt.to_string(),
+                    tier: None,
+                    prompt_head,
+                    prompt_length: prompt.len(),
                     tokens_in: total_tokens_in,
                     tokens_out: total_tokens_out,
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     tool_calls: total_tool_calls,
-                    success: false,
-                    finish_reason: "error".to_string(),
+                    tools: used_tools,
+                    outcome: "error".to_string(),
+                    error_message: Some(e.clone()),
+                    tag: std::env::var("UNDER_RUN_TAG").ok(),
+                    session_id: None,
                 });
-                return Err(e);
+                return Err(err_msg);
             }
         };
 
-        if let Some(usage) = &response.usage {
+        if let Some(ref usage) = resp.usage {
             total_tokens_in += usage.prompt_tokens.unwrap_or(0);
             total_tokens_out += usage.completion_tokens.unwrap_or(0);
         }
 
-        let choice = match response.choices.first() {
-            Some(c) => c,
-            None => break,
-        };
+        if resp.choices.is_empty() {
+            break;
+        }
 
-        if let Some(ref text) = choice.message.content {
-            if !text.trim().is_empty() {
-                println!("{}", text);
-                final_response = text.clone();
+        let choice = &resp.choices[0];
+        let msg = &choice.message;
+
+        if let Some(ref content) = msg.content {
+            if !content.trim().is_empty() {
+                println!("{content}");
+                final_response = content.clone();
             }
         }
 
-        // Check if model emitted tool calls
-        if let Some(ref tool_calls) = choice.message.tool_calls {
+        messages.push(msg.clone());
+
+        if let Some(ref tool_calls) = msg.tool_calls {
             if !tool_calls.is_empty() {
-                messages.push(choice.message.clone());
+                total_tool_calls += tool_calls.len();
                 for tc in tool_calls {
-                    total_tool_calls += 1;
-                    println!("  {} Calling tool: {}", "⚡".yellow(), tc.function.name.bold());
+                    let tool_name = tc.function.name.clone();
+                    if !used_tools.contains(&tool_name) {
+                        used_tools.push(tool_name.clone());
+                    }
 
-                    let args_val: serde_json::Value = serde_json::from_str(&tc.function.arguments).unwrap_or_default();
-                    let result = dispatch_tool(&tc.function.name, &args_val, cwd);
+                    println!("  {} Tool call: {} args: {}", "→".cyan(), tool_name.bold(), tc.function.arguments);
+                    let args_json: serde_json::Value = serde_json::from_str(&tc.function.arguments)
+                        .unwrap_or(serde_json::json!({}));
+                    let result = dispatch_tool(&tc.function.name, &args_json, cwd);
 
-                    let status_icon = if result.is_error { "✗".red() } else { "✓".green() };
-                    println!("    {} Tool result: {}", status_icon, result.output.lines().next().unwrap_or("").dimmed());
+                    if result.is_error {
+                        println!("  {} Tool failed: {}", "✗".red(), result.output);
+                    } else {
+                        println!("  {} Tool output: {}", "✓".green(), result.output.lines().next().unwrap_or(""));
+                    }
 
                     messages.push(ChatMessage {
                         role: "tool".to_string(),
@@ -150,17 +174,23 @@ pub async fn run_agent_loop(
         break;
     }
 
+    let prompt_head = prompt.lines().next().unwrap_or(prompt).chars().take(80).collect::<String>();
     record_run(&RunRecord {
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        ts: chrono::Utc::now().to_rfc3339(),
         provider: session.provider.clone(),
         model: session.model_id.clone(),
-        prompt: prompt.to_string(),
+        tier: None,
+        prompt_head,
+        prompt_length: prompt.len(),
         tokens_in: total_tokens_in,
         tokens_out: total_tokens_out,
         duration_ms: start_time.elapsed().as_millis() as u64,
         tool_calls: total_tool_calls,
-        success: true,
-        finish_reason: "stop".to_string(),
+        tools: used_tools,
+        outcome: "ok".to_string(),
+        error_message: None,
+        tag: std::env::var("UNDER_RUN_TAG").ok(),
+        session_id: None,
     });
 
     println!("{}", format!("\nTask completed successfully! (In: {} tokens, Out: {} tokens, Tools: {})", total_tokens_in, total_tokens_out, total_tool_calls).bold().green());

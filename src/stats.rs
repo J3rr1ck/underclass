@@ -8,12 +8,12 @@ pub fn print_stats(verbose: bool, model_filter: Option<&str>) {
     let content = match read_to_string(&path) {
         Ok(c) => c,
         Err(_) => {
-            println!("No recorded runs found at {}", path.display());
+            println!("No recorded runs found.");
             return;
         }
     };
 
-    let mut records: Vec<RunRecord> = Vec::new();
+    let mut records = Vec::new();
     for line in content.lines() {
         if let Ok(rec) = serde_json::from_str::<RunRecord>(line) {
             if let Some(filter) = model_filter {
@@ -31,7 +31,7 @@ pub fn print_stats(verbose: bool, model_filter: Option<&str>) {
     }
 
     let total_runs = records.len();
-    let successful_runs = records.iter().filter(|r| r.success).count();
+    let successful_runs = records.iter().filter(|r| r.outcome == "ok").count();
     let total_tokens_in: usize = records.iter().map(|r| r.tokens_in).sum();
     let total_tokens_out: usize = records.iter().map(|r| r.tokens_out).sum();
     let total_tool_calls: usize = records.iter().map(|r| r.tool_calls).sum();
@@ -48,7 +48,7 @@ pub fn print_stats(verbose: bool, model_filter: Option<&str>) {
     if verbose {
         println!("\n{}", "--- Recent Runs ---".bold());
         for r in records.iter().rev().take(10) {
-            let status = if r.success { "OK".green() } else { "FAIL".red() };
+            let status = if r.outcome == "ok" { "OK".green() } else { "FAIL".red() };
             println!("[{}] {} ({}) - In: {}, Out: {}, Tools: {}", status, r.model.cyan(), r.provider.dimmed(), r.tokens_in, r.tokens_out, r.tool_calls);
         }
     }

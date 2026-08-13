@@ -19,7 +19,7 @@ pub fn run_learn(apply: bool) {
     for line in content.lines() {
         if let Ok(r) = serde_json::from_str::<RunRecord>(line) {
             total_runs += 1;
-            if r.finish_reason == "length" && r.tool_calls == 0 {
+            if r.outcome != "ok" && r.tool_calls == 0 {
                 overflow_models.insert(r.model.clone());
             }
         }
