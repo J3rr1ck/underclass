@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::fs::{read_to_string, write, read_dir};
 use std::path::Path;
 use std::process::Command;
-use regex::Regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {

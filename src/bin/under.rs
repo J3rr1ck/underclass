@@ -1,16 +1,14 @@
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use reqwest::Client;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 use underclass::agent::r#loop::{run_agent_loop, AgentSession};
-use underclass::config::{pick_model_spec, write_models_json, ModelsJson, UnderOptions, UNKNOWN_CONTEXT};
+use underclass::config::{pick_model_spec, write_models_json, ModelsJson, UnderOptions};
 use underclass::doctor::{run_doctor, DoctorOptions};
-use underclass::fanout::{commit_and_clean_worktree, create_worktree, FanOutTask};
-use underclass::free_models::{fetch_free_models, read_free_cache};
+use underclass::fanout::{commit_and_clean_worktree, create_worktree};
+use underclass::free_models::fetch_free_models;
 use underclass::learn::run_learn;
-use underclass::model_map::{classify_task, load_model_map, tier_model, Tier};
-use underclass::planner::{plan_to_prompt, ExecutionPlan};
 use underclass::preferences::remember_preference;
 use underclass::setup::run_setup;
 use underclass::stats::print_stats;
@@ -164,7 +162,7 @@ async fn main() {
                     println!("Processing fan-out task branch: {}...", task_branch.bold());
                     if let Ok(wt_dir) = create_worktree(&base_branch, task_branch, &cwd) {
                         let opts = UnderOptions::default();
-                        let (_, live_providers, _) = write_models_json(&client, &opts).await;
+                        let (_, _live_providers, _) = write_models_json(&client, &opts).await;
 
                         let session = AgentSession {
                             provider: "danger".to_string(),
@@ -234,7 +232,7 @@ async fn main() {
         api_key: cli.api_key,
     };
 
-    let (models_path, live_providers, base_urls) = write_models_json(&client, &opts).await;
+    let (models_path, live_providers, _base_urls) = write_models_json(&client, &opts).await;
     let models_content = std::fs::read_to_string(&models_path).unwrap_or_default();
     let models_json: ModelsJson = serde_json::from_str(&models_content).unwrap_or(ModelsJson { providers: std::collections::HashMap::new() });
 

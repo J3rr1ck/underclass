@@ -50,7 +50,7 @@ pub fn commit_and_clean_worktree(
 ) -> FanOutReport {
     // 1. Git add & commit
     let _ = Command::new("git").arg("add").arg("-A").current_dir(worktree_dir).output();
-    let commit_res = Command::new("git")
+    let _commit_res = Command::new("git")
         .arg("commit")
         .arg("-m")
         .arg(format!("under fan-out: {task_branch}"))

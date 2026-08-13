@@ -1,5 +1,5 @@
 use std::fs::read_to_string;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, Default)]
 pub struct ProjectInfo {

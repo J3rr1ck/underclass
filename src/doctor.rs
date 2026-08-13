@@ -2,8 +2,8 @@ use colored::Colorize;
 use reqwest::Client;
 use std::process::Command;
 use std::time::Duration;
-use crate::config::{check_endpoint, DEFAULT_DANGER_BASE, DEFAULT_GUEST_KEY};
-use crate::engines::{discover_all_local_engines, LOCAL_ENGINES};
+use crate::config::{check_endpoint, DEFAULT_DANGER_BASE};
+use crate::engines::discover_all_local_engines;
 
 pub struct DoctorOptions {
     pub offline: bool,

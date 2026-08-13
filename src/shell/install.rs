@@ -1,5 +1,4 @@
 use std::fs::{read_to_string, write, create_dir_all};
-use std::path::PathBuf;
 use colored::Colorize;
 
 const ZSH_INTEGRATION_LINE: &str = "# underclass danger zsh integration\nsource ~/.underclass/plugin.zsh";
