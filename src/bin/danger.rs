@@ -18,6 +18,12 @@ struct Cli {
     #[arg(long)]
     explain: bool,
 
+    #[arg(long, default_value_t = 1)]
+    retries: usize,
+
+    #[arg(long)]
+    yes: bool,
+
     #[arg(trailing_var_arg = true)]
     cmd_args: Vec<String>,
 
@@ -36,10 +42,14 @@ enum Commands {
     Edit {
         file: String,
         change: String,
+
+        #[arg(long)]
+        yes: bool,
     },
     /// Assist subshell command helper
     Assist {
         input: String,
+
         #[arg(long)]
         hint: bool,
     },
@@ -82,7 +92,7 @@ async fn main() {
                     println!("No recorded command failure found in environment.");
                 }
             }
-            Commands::Edit { file, change } => {
+            Commands::Edit { file, change, yes: _ } => {
                 let cwd = std::env::current_dir().unwrap_or_default();
                 let client = Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default();
                 let session = AgentSession {
@@ -124,33 +134,41 @@ async fn main() {
         return;
     }
 
-    // Run user command directly
     let cmd = &cli.cmd_args[0];
     let args = &cli.cmd_args[1..];
-    println!("Executing: {} {}", cmd, args.join(" "));
 
-    let status = Command::new(cmd).args(args).status();
-    match status {
-        Ok(s) => {
-            if !s.success() {
-                let code = s.code().unwrap_or(-1);
-                println!("\n{}", format!("Command failed with exit code {code}",).red().bold());
-                if cli.explain || cli.yolo {
-                    let cwd = std::env::current_dir().unwrap_or_default();
-                    let client = Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default();
-                    let session = AgentSession {
-                        provider: "danger".to_string(),
-                        model_id: "minimax-m2.7-jangtq-crack".to_string(),
-                        base_url: "https://api.danger.plus/v1".to_string(),
-                        api_key: "danger_token_guest_mode".to_string(),
-                        context_window: 128000,
-                        max_tokens: 8192,
-                    };
-                    let prompt = format!("The command '{} {}' failed with code {}. {}", cmd, args.join(" "), code, if cli.yolo { "Fix the code." } else { "Explain the failure." });
-                    let _ = run_agent_loop(&session, &client, &prompt, &cwd, 10).await;
+    for attempt in 1..=cli.retries.max(1) {
+        println!("Executing (attempt {attempt}/{}): {} {}", cli.retries.max(1), cmd, args.join(" "));
+
+        let status = Command::new(cmd).args(args).status();
+        match status {
+            Ok(s) => {
+                if s.success() {
+                    println!("{}", "Command succeeded!".bold().green());
+                    break;
+                } else {
+                    let code = s.code().unwrap_or(-1);
+                    println!("\n{}", format!("Command failed with exit code {code}").red().bold());
+                    if cli.explain || cli.yolo {
+                        let cwd = std::env::current_dir().unwrap_or_default();
+                        let client = Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default();
+                        let session = AgentSession {
+                            provider: "danger".to_string(),
+                            model_id: "minimax-m2.7-jangtq-crack".to_string(),
+                            base_url: "https://api.danger.plus/v1".to_string(),
+                            api_key: "danger_token_guest_mode".to_string(),
+                            context_window: 128000,
+                            max_tokens: 8192,
+                        };
+                        let prompt = format!("The command '{} {}' failed with code {}. {}", cmd, args.join(" "), code, if cli.yolo { "Fix the code." } else { "Explain the failure." });
+                        let _ = run_agent_loop(&session, &client, &prompt, &cwd, 10).await;
+                    }
                 }
             }
+            Err(e) => {
+                eprintln!("Failed to run command {cmd}: {e}");
+                break;
+            }
         }
-        Err(e) => eprintln!("Failed to run command {cmd}: {e}"),
     }
 }

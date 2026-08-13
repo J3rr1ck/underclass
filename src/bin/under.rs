@@ -1,12 +1,14 @@
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use reqwest::Client;
+use std::fs::read_to_string;
 use std::path::PathBuf;
 use std::time::Duration;
 use underclass::agent::r#loop::{run_agent_loop, AgentSession};
-use underclass::config::{pick_model_spec, write_models_json, ModelsJson, UnderOptions};
+use underclass::config::{pick_model_spec, write_models_json, KNOWN_PROVIDERS, ModelsJson, UnderOptions};
 use underclass::doctor::{run_doctor, DoctorOptions};
-use underclass::fanout::{commit_and_clean_worktree, create_worktree};
+use underclass::engines::LOCAL_ENGINES;
+use underclass::fanout::{commit_and_clean_worktree, create_worktree, FanOutTask};
 use underclass::free_models::fetch_free_models;
 use underclass::learn::run_learn;
 use underclass::preferences::remember_preference;
@@ -35,6 +37,12 @@ struct Cli {
     ollama: bool,
 
     #[arg(long)]
+    vllm: bool,
+
+    #[arg(long)]
+    huggingface: bool,
+
+    #[arg(long)]
     base_url: Option<String>,
 
     #[arg(long)]
@@ -44,7 +52,13 @@ struct Cli {
     plan: bool,
 
     #[arg(long)]
+    timeout: Option<u64>,
+
+    #[arg(long)]
     tier: Option<String>,
+
+    #[arg(long)]
+    tools: Option<String>,
 
     #[arg(long)]
     free: bool,
@@ -84,6 +98,9 @@ enum Commands {
         task: Vec<String>,
 
         #[arg(long)]
+        tasks: Option<PathBuf>,
+
+        #[arg(long)]
         base: Option<String>,
 
         #[arg(long)]
@@ -106,6 +123,9 @@ enum Commands {
 
         #[arg(long)]
         model: Option<String>,
+
+        #[arg(long)]
+        since: Option<String>,
     },
     /// Derive model-map verdicts and servedContext recommendations from run logs
     Learn {
@@ -124,7 +144,27 @@ enum Commands {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let client = Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default();
+    let client_timeout = cli.timeout.unwrap_or(120);
+    let client = Client::builder().timeout(Duration::from_secs(client_timeout)).build().unwrap_or_default();
+
+    if cli.list_providers {
+        println!("{}", "=== Underclass Supported Providers & Engines ===".bold().cyan());
+        for p in KNOWN_PROVIDERS {
+            let note = match *p {
+                "danger" => "Hosted zero-config gateway (danger.plus)",
+                "vllm" => "vLLM High-throughput Engine (localhost:8000)",
+                "huggingface" => "Hugging Face Inference Router (router.huggingface.co)",
+                "lmstudio" => "LM Studio Local Server (localhost:1234)",
+                "ollama" => "Ollama Local Server (localhost:11434)",
+                "llamacpp" => "llama.cpp / llama-server (localhost:8080)",
+                "jan" => "Jan Desktop AI (localhost:1337)",
+                "koboldcpp" => "KoboldCPP Server (localhost:5001)",
+                _ => "OpenAI-compatible endpoint",
+            };
+            println!("  - {:<14} : {}", p.bold(), note);
+        }
+        return;
+    }
 
     if cli.list_free {
         println!("{}", "=== OpenRouter Free Tool-Capable Models ===".bold().cyan());
@@ -139,31 +179,75 @@ async fn main() {
         return;
     }
 
+    let mut provider_choice = cli.provider.clone();
+    if cli.lmstudio {
+        provider_choice = Some("lmstudio".to_string());
+    } else if cli.ollama {
+        provider_choice = Some("ollama".to_string());
+    } else if cli.vllm {
+        provider_choice = Some("vllm".to_string());
+    } else if cli.huggingface {
+        provider_choice = Some("huggingface".to_string());
+    }
+
+    let opts = UnderOptions {
+        model: cli.model,
+        provider: provider_choice,
+        base_url: cli.base_url,
+        api_key: cli.api_key,
+    };
+
+    let (models_path, live_providers, _) = write_models_json(&client, &opts).await;
+
+    if cli.list_models {
+        println!("{}", "=== Resolvable Models & Providers ===".bold().cyan());
+        if let Ok(content) = read_to_string(&models_path) {
+            if let Ok(mj) = serde_json::from_str::<ModelsJson>(&content) {
+                for (p_name, p_cfg) in mj.providers {
+                    println!("Provider: {} ({})", p_name.bold(), p_cfg.base_url.cyan());
+                    for m in p_cfg.models {
+                        println!("  - {} (window: {} tokens)", m.id.yellow(), m.context_window);
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     if let Some(cmd) = cli.command {
         match cmd {
             Commands::Setup => run_setup().await,
             Commands::Doctor { offline, deep, benchmark } => {
                 run_doctor(DoctorOptions { offline, deep, benchmark }).await;
             }
-            Commands::FanOut { task, base, target, no_merge, pr } => {
+            Commands::FanOut { task, tasks, base, target, no_merge, pr } => {
                 let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
                 let base_branch = base.unwrap_or_else(|| "main".to_string());
                 let target_branch = target.unwrap_or_else(|| base_branch.clone());
 
-                for t_spec in task {
-                    let parts: Vec<&str> = t_spec.splitn(2, ':').collect();
-                    if parts.len() < 2 {
-                        eprintln!("Invalid task spec '{}'. Expected format 'branch:prompt'", t_spec);
-                        continue;
+                let mut task_specs = Vec::new();
+                for t in task {
+                    let parts: Vec<&str> = t.splitn(2, ':').collect();
+                    if parts.len() == 2 {
+                        task_specs.push(FanOutTask {
+                            branch: parts[0].to_string(),
+                            prompt: parts[1].to_string(),
+                            message: None,
+                        });
                     }
-                    let task_branch = parts[0];
-                    let task_prompt = parts[1];
+                }
 
-                    println!("Processing fan-out task branch: {}...", task_branch.bold());
-                    if let Ok(wt_dir) = create_worktree(&base_branch, task_branch, &cwd) {
-                        let opts = UnderOptions::default();
-                        let (_, _live_providers, _) = write_models_json(&client, &opts).await;
+                if let Some(tasks_file) = tasks {
+                    if let Ok(content) = read_to_string(tasks_file) {
+                        if let Ok(parsed) = serde_json::from_str::<Vec<FanOutTask>>(&content) {
+                            task_specs.extend(parsed);
+                        }
+                    }
+                }
 
+                for t_spec in task_specs {
+                    println!("Processing fan-out task branch: {}...", t_spec.branch.bold());
+                    if let Ok(wt_dir) = create_worktree(&base_branch, &t_spec.branch, &cwd) {
                         let session = AgentSession {
                             provider: "danger".to_string(),
                             model_id: "minimax-m2.7-jangtq-crack".to_string(),
@@ -173,8 +257,8 @@ async fn main() {
                             max_tokens: 8192,
                         };
 
-                        let _ = run_agent_loop(&session, &client, task_prompt, &wt_dir, 15).await;
-                        let report = commit_and_clean_worktree(task_branch, &target_branch, &wt_dir, &cwd, no_merge, pr);
+                        let _ = run_agent_loop(&session, &client, &t_spec.prompt, &wt_dir, 15).await;
+                        let report = commit_and_clean_worktree(&t_spec.branch, &target_branch, &wt_dir, &cwd, no_merge, pr);
                         println!("  Result: Branch {} - Success: {}", report.branch, report.success);
                     }
                 }
@@ -194,7 +278,7 @@ async fn main() {
                     Err(e) => eprintln!("Workflow error: {e}"),
                 }
             }
-            Commands::Stats { verbose, model } => {
+            Commands::Stats { verbose, model, since: _ } => {
                 print_stats(verbose, model.as_deref());
             }
             Commands::Learn { apply } => {
@@ -210,7 +294,6 @@ async fn main() {
         return;
     }
 
-    // Default: One-shot run or prompt task
     let prompt_text = cli.prompt.join(" ");
     if prompt_text.trim().is_empty() {
         println!("{}", "underclass v0.1.0-alpha.1 (Rust) — High-Performance Coding Agent".bold().cyan());
@@ -218,21 +301,6 @@ async fn main() {
         return;
     }
 
-    let mut provider_choice = cli.provider.clone();
-    if cli.lmstudio {
-        provider_choice = Some("lmstudio".to_string());
-    } else if cli.ollama {
-        provider_choice = Some("ollama".to_string());
-    }
-
-    let opts = UnderOptions {
-        model: cli.model,
-        provider: provider_choice,
-        base_url: cli.base_url,
-        api_key: cli.api_key,
-    };
-
-    let (models_path, live_providers, _base_urls) = write_models_json(&client, &opts).await;
     let models_content = std::fs::read_to_string(&models_path).unwrap_or_default();
     let models_json: ModelsJson = serde_json::from_str(&models_content).unwrap_or(ModelsJson { providers: std::collections::HashMap::new() });
 

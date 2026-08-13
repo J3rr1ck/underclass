@@ -6,7 +6,7 @@ use underclass::config::{pick_model_spec, write_models_json, ModelsJson, UnderOp
 async fn test_vllm_and_huggingface_fallback_resolution() {
     let client = Client::builder().timeout(Duration::from_secs(3)).build().unwrap();
 
-    // 1. Test Hugging Face fallback when HF_TOKEN or explicit provider/model is given
+    // Test Hugging Face fallback when HF_TOKEN or explicit provider/model is given
     std::env::set_var("HF_TOKEN", "hf_test_token_sample");
 
     let opts = UnderOptions {
@@ -45,9 +45,18 @@ async fn test_vllm_provider_prefix_resolution() {
     let (models_path, live_providers, _) = write_models_json(&client, &opts).await;
     assert!(live_providers.contains(&"vllm".to_string()));
 
-    let models_content = std::fs::read_to_string(&models_path).expect("Failed to read models.json");
-    let models_json: ModelsJson = serde_json::from_str(&models_content).expect("Failed to parse models.json");
+    let mut models_json_opt: Option<ModelsJson> = None;
+    for _ in 0..5 {
+        if let Ok(content) = std::fs::read_to_string(&models_path) {
+            if let Ok(mj) = serde_json::from_str::<ModelsJson>(&content) {
+                models_json_opt = Some(mj);
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 
+    let models_json = models_json_opt.expect("Failed to parse models.json");
     let (provider, model) = pick_model_spec(&opts, &live_providers, &models_json)
         .expect("Failed to resolve vllm spec");
 
