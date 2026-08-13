@@ -15,6 +15,14 @@ pub struct EngineSpec {
 
 pub const LOCAL_ENGINES: &[EngineSpec] = &[
     EngineSpec {
+        id: "vllm",
+        name: "vLLM",
+        default_base_url: "http://localhost:8000/v1",
+        default_port: 8000,
+        native_context_path: None,
+        health_path: Some("/version"),
+    },
+    EngineSpec {
         id: "lmstudio",
         name: "LM Studio",
         default_base_url: "http://localhost:1234/v1",
@@ -29,14 +37,6 @@ pub const LOCAL_ENGINES: &[EngineSpec] = &[
         default_port: 11434,
         native_context_path: Some("/api/ps"),
         health_path: Some("/api/version"),
-    },
-    EngineSpec {
-        id: "vllm",
-        name: "vLLM",
-        default_base_url: "http://localhost:8000/v1",
-        default_port: 8000,
-        native_context_path: None,
-        health_path: Some("/version"),
     },
     EngineSpec {
         id: "llamacpp",
@@ -158,6 +158,14 @@ pub const LOCAL_ENGINES: &[EngineSpec] = &[
         native_context_path: None,
         health_path: Some("/v1/models"),
     },
+    EngineSpec {
+        id: "huggingface",
+        name: "Hugging Face Inference Router",
+        default_base_url: "https://router.huggingface.co/v1",
+        default_port: 443,
+        native_context_path: None,
+        health_path: Some("/v1/models"),
+    },
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,14 +189,16 @@ pub async fn discover_all_local_engines(client: &Client) -> Vec<DiscoveredEngine
     let mut seen_ports = std::collections::HashSet::new();
 
     for engine in LOCAL_ENGINES {
-        if seen_ports.contains(&engine.default_port) && engine.id != "lmstudio" && engine.id != "ollama" {
-            // Check if already probed on this port, unless it's a primary engine
+        if seen_ports.contains(&engine.default_port) && engine.id != "lmstudio" && engine.id != "ollama" && engine.id != "vllm" {
+            // Skip duplicate port check for non-primary engines
         }
         seen_ports.insert(engine.default_port);
 
         let env_override = match engine.id {
+            "vllm" => std::env::var("UNDERCLASS_VLLM_BASE").ok(),
             "lmstudio" => std::env::var("UNDERCLASS_LMSTUDIO_BASE").ok(),
             "ollama" => std::env::var("UNDERCLASS_OLLAMA_BASE").ok(),
+            "huggingface" => std::env::var("UNDERCLASS_HUGGINGFACE_BASE").ok(),
             _ => None,
         };
 
@@ -203,13 +213,22 @@ pub async fn discover_all_local_engines(client: &Client) -> Vec<DiscoveredEngine
 
 pub async fn probe_engine(client: &Client, engine: &EngineSpec, base_url: &str) -> Option<DiscoveredEngine> {
     let root_url = base_url.trim_end_matches('/').trim_end_matches("/v1");
-    let models_endpoint = format!("{}/v1/models", root_url);
+    let models_endpoint = format!("{root_url}/v1/models");
 
-    let res = client
-        .get(&models_endpoint)
-        .timeout(Duration::from_millis(2000))
-        .send()
-        .await;
+    let api_key = match engine.id {
+        "huggingface" => std::env::var("HF_TOKEN")
+            .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
+            .or_else(|_| std::env::var("HUGGING_FACE_HUB_TOKEN"))
+            .ok(),
+        _ => None,
+    };
+
+    let mut req = client.get(&models_endpoint).timeout(Duration::from_millis(2500));
+    if let Some(key) = api_key {
+        req = req.header("authorization", format!("Bearer {key}"));
+    }
+
+    let res = req.send().await;
 
     let mut is_responsive = false;
     let mut models = Vec::new();
@@ -245,10 +264,9 @@ pub async fn probe_engine(client: &Client, engine: &EngineSpec, base_url: &str) 
         }
     }
 
-    // Try native context routes for specific engines
     if is_responsive {
         if engine.id == "lmstudio" {
-            let lm_native = format!("{}/api/v0/models", root_url);
+            let lm_native = format!("{root_url}/api/v0/models");
             if let Ok(resp) = client.get(&lm_native).timeout(Duration::from_millis(2000)).send().await {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
                     if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
@@ -261,7 +279,7 @@ pub async fn probe_engine(client: &Client, engine: &EngineSpec, base_url: &str) 
                 }
             }
         } else if engine.id == "ollama" {
-            let ollama_native = format!("{}/api/ps", root_url);
+            let ollama_native = format!("{root_url}/api/ps");
             if let Ok(resp) = client.get(&ollama_native).timeout(Duration::from_millis(2000)).send().await {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
                     if let Some(models_arr) = json.get("models").and_then(|m| m.as_array()) {

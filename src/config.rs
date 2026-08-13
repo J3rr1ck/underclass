@@ -11,6 +11,8 @@ pub const UNDER_VERSION: &str = "0.1.0-alpha.1";
 pub const DEFAULT_DANGER_BASE: &str = "https://api.danger.plus/v1";
 pub const DEFAULT_DANGER_MODEL: &str = "minimax-m2.7-jangtq-crack";
 pub const DEFAULT_GUEST_KEY: &str = "danger_token_guest_mode";
+pub const DEFAULT_HUGGINGFACE_BASE: &str = "https://router.huggingface.co/v1";
+pub const DEFAULT_HUGGINGFACE_MODEL: &str = "meta-llama/Llama-3.1-8B-Instruct";
 
 pub const PI_CONTEXT_SAFETY_TOKENS: usize = 4096;
 pub const MEASURED_MIN_PROMPT_TOKENS: usize = 2482;
@@ -19,7 +21,7 @@ pub const MEASURED_TURN1_PROMPT_TOKENS: usize = 7965;
 pub const UNKNOWN_CONTEXT: usize = 8192;
 
 pub const KNOWN_PROVIDERS: &[&str] = &[
-    "danger", "lmstudio", "ollama", "vllm", "llamacpp", "jan", "localai", "koboldcpp",
+    "danger", "vllm", "huggingface", "lmstudio", "ollama", "llamacpp", "jan", "localai", "koboldcpp",
     "llamafile", "tabby", "oobabooga", "exllamav2", "aphrodite", "mistralrs", "fastchat",
     "nim", "openwebui", "tgi", "exo", "custom"
 ];
@@ -163,6 +165,7 @@ pub async fn write_models_json(client: &Client, opts: &UnderOptions) -> (PathBuf
     let mut live_providers = Vec::new();
     let mut provider_base_urls = HashMap::new();
 
+    // 1. Danger provider
     let danger_base = std::env::var("UNDERCLASS_API_BASE").unwrap_or_else(|_| DEFAULT_DANGER_BASE.to_string());
     let danger_key = opts.api_key.clone()
         .or_else(|| std::env::var("DANGER_API_KEY").ok())
@@ -194,6 +197,7 @@ pub async fn write_models_json(client: &Client, opts: &UnderOptions) -> (PathBuf
     live_providers.push("danger".to_string());
     provider_base_urls.insert("danger".to_string(), danger_base);
 
+    // 2. Discover local engines (vLLM, LM Studio, Ollama, Hugging Face, etc.)
     let discovered = discover_all_local_engines(client).await;
     for eng in discovered {
         if !eng.available_models.is_empty() {
@@ -223,6 +227,92 @@ pub async fn write_models_json(client: &Client, opts: &UnderOptions) -> (PathBuf
         }
     }
 
+    // 2.5 Explicit vLLM setup if requested via --provider vllm, vllm/ model prefix, or UNDERCLASS_VLLM_BASE
+    let is_vllm_requested = opts.provider.as_deref() == Some("vllm")
+        || opts.model.as_deref().map_or(false, |m| m.starts_with("vllm/"))
+        || opts.base_url.as_deref().map_or(false, |b| b.contains(":8000"))
+        || std::env::var("UNDERCLASS_VLLM_BASE").is_ok();
+
+    if is_vllm_requested && !live_providers.contains(&"vllm".to_string()) {
+        let vllm_base = opts.base_url.clone()
+            .or_else(|| std::env::var("UNDERCLASS_VLLM_BASE").ok())
+            .unwrap_or_else(|| "http://localhost:8000/v1".to_string());
+        let vllm_model = opts.model.as_deref().map(bare_model_id).unwrap_or("Qwen/Qwen2.5-Coder-7B-Instruct");
+
+        let vllm_models = vec![ModelConfigEntry {
+            id: vllm_model.to_string(),
+            name: Some(vllm_model.to_string()),
+            reasoning: false,
+            input: vec!["text".to_string()],
+            context_window: 128000,
+            max_tokens: 8192,
+            cost: CostConfig::default(),
+        }];
+
+        providers.insert("vllm".to_string(), ProviderConfig {
+            name: "vLLM Engine".to_string(),
+            base_url: vllm_base.clone(),
+            api: "openai-completions".to_string(),
+            api_key: opts.api_key.clone().unwrap_or_else(|| "none".to_string()),
+            headers: None,
+            models: vllm_models,
+        });
+        live_providers.push("vllm".to_string());
+        provider_base_urls.insert("vllm".to_string(), vllm_base);
+    }
+
+    // 3. Fallback: Hugging Face Inference Endpoint setup when HF token is present or requested
+    let hf_token = opts.api_key.clone()
+        .or_else(|| std::env::var("HF_TOKEN").ok())
+        .or_else(|| std::env::var("HUGGINGFACE_API_KEY").ok())
+        .or_else(|| std::env::var("HUGGING_FACE_HUB_TOKEN").ok());
+
+    let is_hf_requested = opts.provider.as_deref() == Some("huggingface")
+        || opts.model.as_deref().map_or(false, |m| m.starts_with("huggingface/") || m.contains('/'))
+        || hf_token.is_some();
+
+    if is_hf_requested {
+        let token = hf_token.unwrap_or_else(|| "hf_none".to_string());
+        let hf_base = std::env::var("UNDERCLASS_HUGGINGFACE_BASE").unwrap_or_else(|_| DEFAULT_HUGGINGFACE_BASE.to_string());
+        let hf_model = opts.model.clone().unwrap_or_else(|| DEFAULT_HUGGINGFACE_MODEL.to_string());
+        let bare_hf = bare_model_id(&hf_model).to_string();
+
+        let hf_models = vec![
+            ModelConfigEntry {
+                id: bare_hf.clone(),
+                name: Some(bare_hf),
+                reasoning: false,
+                input: vec!["text".to_string()],
+                context_window: 128000,
+                max_tokens: 8192,
+                cost: CostConfig::default(),
+            },
+            ModelConfigEntry {
+                id: DEFAULT_HUGGINGFACE_MODEL.to_string(),
+                name: Some(DEFAULT_HUGGINGFACE_MODEL.to_string()),
+                reasoning: false,
+                input: vec!["text".to_string()],
+                context_window: 128000,
+                max_tokens: 8192,
+                cost: CostConfig::default(),
+            },
+        ];
+
+        providers.insert("huggingface".to_string(), ProviderConfig {
+            name: "Hugging Face Inference Router".to_string(),
+            base_url: hf_base.clone(),
+            api: "openai-completions".to_string(),
+            api_key: token,
+            headers: None,
+            models: hf_models,
+        });
+        if !live_providers.contains(&"huggingface".to_string()) {
+            live_providers.push("huggingface".to_string());
+        }
+        provider_base_urls.insert("huggingface".to_string(), hf_base);
+    }
+
+    // 4. Custom endpoint if specified
     if let Some(ref base_url) = opts.base_url {
         let custom_key = opts.api_key.clone().or_else(|| std::env::var("OPENAI_API_KEY").ok()).unwrap_or_else(|| "none".to_string());
         let model_id = opts.model.as_deref().map(bare_model_id).unwrap_or("custom-model");
@@ -277,7 +367,7 @@ pub fn pick_model_spec(
     } else if opts.base_url.is_some() {
         vec!["custom"]
     } else {
-        vec!["danger", "lmstudio", "ollama", "vllm", "llamacpp", "jan", "localai", "koboldcpp", "llamafile"]
+        vec!["vllm", "lmstudio", "ollama", "huggingface", "danger", "llamacpp", "jan", "localai", "koboldcpp", "llamafile"]
     };
 
     for provider in preferred {
