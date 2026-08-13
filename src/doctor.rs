@@ -14,9 +14,9 @@ pub struct DoctorOptions {
 pub async fn run_doctor(opts: DoctorOptions) {
     println!("{}", "=== Underclass Phased Health Check ===".bold().cyan());
 
-    // 0. System Fetch & Hardware Profile (Prefers fastfetch > hyfetch > pfetch > ufetch > neofetch)
+    // 0. System Fetch & Hardware Profile (Prefers fastfetch > neofetch > hyfetch > pfetch > ufetch > cpufetch > onefetch)
     println!("\n{}", "[System & Hardware Profile]".bold());
-    let fetch_tools = ["fastfetch", "hyfetch", "pfetch", "ufetch", "neofetch", "cpufetch", "onefetch"];
+    let fetch_tools = ["fastfetch", "neofetch", "hyfetch", "pfetch", "ufetch", "cpufetch", "onefetch"];
     let mut found_fetch = false;
 
     for tool in fetch_tools {
@@ -48,7 +48,8 @@ pub async fn run_doctor(opts: DoctorOptions) {
     println!("\n{}", "[Toolchain & Environment]".bold());
     check_tool("git", &["--version"], true, "Install git");
     check_tool("rg", &["--version"], true, "Install ripgrep: brew install ripgrep / cargo install ripgrep");
-    check_tool("fastfetch", &["--version"], false, "Recommended neofetch replacement (brew install fastfetch)");
+    check_tool("fastfetch", &["--version"], false, "Recommended fetch tool (brew install fastfetch)");
+    check_tool("neofetch", &["--version"], false, "Legacy fetch tool");
     check_tool("node", &["--version"], false, "Node 22.19+ recommended for legacy compatibility");
     check_tool("gh", &["--version"], false, "GitHub CLI for fan-out --pr");
 
