@@ -90,6 +90,18 @@ fn spawn_mock_vllm_hf_server() -> (String, thread::JoinHandle<()>) {
     (base_url, handle)
 }
 
+fn read_models_json_safe(path: &PathBuf) -> ModelsJson {
+    for _ in 0..10 {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(mj) = serde_json::from_str::<ModelsJson>(&content) {
+                return mj;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("Failed to safely read models.json");
+}
+
 #[tokio::test]
 async fn test_vllm_huggingface_manual_model_pull_spec() {
     let client = Client::builder().timeout(Duration::from_secs(5)).build().unwrap();
@@ -103,8 +115,7 @@ async fn test_vllm_huggingface_manual_model_pull_spec() {
     };
 
     let (models_path1, live_providers1, _) = write_models_json(&client, &opts1).await;
-    let models_content1 = std::fs::read_to_string(&models_path1).unwrap();
-    let models_json1: ModelsJson = serde_json::from_str(&models_content1).unwrap();
+    let models_json1 = read_models_json_safe(&models_path1);
 
     let (provider1, model1) = pick_model_spec(&opts1, &live_providers1, &models_json1).unwrap();
     assert_eq!(provider1, "vllm");
@@ -119,8 +130,7 @@ async fn test_vllm_huggingface_manual_model_pull_spec() {
     };
 
     let (models_path2, live_providers2, _) = write_models_json(&client, &opts2).await;
-    let models_content2 = std::fs::read_to_string(&models_path2).unwrap();
-    let models_json2: ModelsJson = serde_json::from_str(&models_content2).unwrap();
+    let models_json2 = read_models_json_safe(&models_path2);
 
     let (provider2, model2) = pick_model_spec(&opts2, &live_providers2, &models_json2).unwrap();
     assert_eq!(provider2, "vllm");
@@ -140,8 +150,7 @@ async fn test_vllm_huggingface_prompt_execution() {
     };
 
     let (models_path, live_providers, _) = write_models_json(&client, &opts).await;
-    let models_content = std::fs::read_to_string(&models_path).unwrap();
-    let models_json: ModelsJson = serde_json::from_str(&models_content).unwrap();
+    let models_json = read_models_json_safe(&models_path);
 
     let (provider, model) = pick_model_spec(&opts, &live_providers, &models_json).unwrap();
     assert_eq!(provider, "vllm");

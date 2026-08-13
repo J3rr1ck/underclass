@@ -5,7 +5,7 @@ use std::process::Command;
 use std::time::Duration;
 use underclass::agent::r#loop::{run_agent_loop, AgentSession};
 use underclass::shell::assist::run_assist;
-use underclass::shell::install::{install_zsh_plugin, uninstall_zsh_plugin};
+use underclass::shell::install::{install_zsh_plugin, start_subshell, uninstall_zsh_plugin};
 
 #[derive(Parser)]
 #[command(name = "danger")]
@@ -110,8 +110,8 @@ async fn main() {
                 run_assist(&input, hint).await;
             }
             Commands::Shell => {
-                println!("{}", "Spawning zsh subshell with danger integration...".cyan());
-                let _ = Command::new("zsh").status();
+                let code = start_subshell();
+                std::process::exit(code);
             }
             Commands::Init { login_shell } => {
                 if let Err(e) = install_zsh_plugin(login_shell) {
