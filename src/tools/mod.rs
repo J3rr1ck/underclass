@@ -3,6 +3,7 @@ pub mod repo_search;
 pub mod hash_edit;
 pub mod line_anchored_edit;
 pub mod batch_edit;
+pub mod sandbox;
 
 use std::path::Path;
 use serde_json::Value;

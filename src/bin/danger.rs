@@ -4,10 +4,44 @@ use reqwest::Client;
 use std::process::Command;
 use std::time::Duration;
 use underclass::agent::r#loop::{run_agent_loop, AgentSession};
+use underclass::config::{pick_model_spec, write_models_json, ModelsJson, UnderOptions};
 use underclass::shell::assist::run_assist;
 use underclass::shell::install::{
     detect_installed_shells, install_shell_plugin, start_subshell_for, uninstall_shell_plugin, ShellType,
 };
+
+/// `danger` has no --base-url/--api-key/-m of its own -- its whole design is
+/// "just works" with whatever's already configured. The three call sites
+/// below used to hardcode api.danger.plus + a guest key directly, which ran
+/// EVERY danger command through the remote gateway regardless of what a user
+/// had already set up via `under setup` (the same bug class already fixed in
+/// under.rs's own model selection). This runs the identical discovery
+/// under.rs's main() does -- write_models_json() + pick_model_spec() against
+/// UnderOptions::default() (danger takes no model flags of its own) -- so
+/// `danger why`/`edit`/the retry-loop's explain/--yolo branch land on
+/// whatever local or configured endpoint the user actually has live.
+async fn resolve_danger_session(client: &Client) -> Result<AgentSession, String> {
+    let opts = UnderOptions { model: None, provider: None, base_url: None, api_key: None };
+    let (models_path, live_providers, _) = write_models_json(client, &opts).await;
+    let models_content = std::fs::read_to_string(&models_path).unwrap_or_default();
+    let models_json: ModelsJson =
+        serde_json::from_str(&models_content).unwrap_or(ModelsJson { providers: std::collections::HashMap::new() });
+
+    let (provider, model_id) = pick_model_spec(&opts, &live_providers, &models_json)?;
+    let p_config = models_json
+        .providers
+        .get(&provider)
+        .ok_or_else(|| format!("no config found for provider '{provider}'"))?;
+
+    Ok(AgentSession {
+        provider,
+        model_id,
+        base_url: p_config.base_url.clone(),
+        api_key: p_config.api_key.clone(),
+        context_window: 128000,
+        max_tokens: 8192,
+    })
+}
 
 #[derive(Parser)]
 #[command(name = "danger")]
@@ -88,13 +122,12 @@ async fn main() {
                 if let (Some(cmdline), Some(stat)) = (env_cmd, env_status) {
                     println!("{}", format!("Diagnosing failure of: {} (exit code {})", cmdline.bold(), stat).cyan());
                     let client = Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default();
-                    let session = AgentSession {
-                        provider: "danger".to_string(),
-                        model_id: "minimax-m2.7-jangtq-crack".to_string(),
-                        base_url: "https://api.danger.plus/v1".to_string(),
-                        api_key: "danger_token_guest_mode".to_string(),
-                        context_window: 128000,
-                        max_tokens: 8192,
+                    let session = match resolve_danger_session(&client).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("danger why: {e}");
+                            return;
+                        }
                     };
                     let cwd = std::env::current_dir().unwrap_or_default();
                     let prompt = format!("Command failed: {}\nExit status: {}\nExplain why it failed and how to fix it.", cmdline, stat);
@@ -106,13 +139,12 @@ async fn main() {
             Commands::Edit { file, change, yes: _ } => {
                 let cwd = std::env::current_dir().unwrap_or_default();
                 let client = Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default();
-                let session = AgentSession {
-                    provider: "danger".to_string(),
-                    model_id: "minimax-m2.7-jangtq-crack".to_string(),
-                    base_url: "https://api.danger.plus/v1".to_string(),
-                    api_key: "danger_token_guest_mode".to_string(),
-                    context_window: 128000,
-                    max_tokens: 8192,
+                let session = match resolve_danger_session(&client).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("danger edit: {e}");
+                        return;
+                    }
                 };
                 let prompt = format!("Edit file '{}' according to instruction: '{}'", file, change);
                 let _ = run_agent_loop(&session, &client, &prompt, &cwd, 10).await;
@@ -196,13 +228,12 @@ async fn main() {
                     if cli.explain || cli.yolo {
                         let cwd = std::env::current_dir().unwrap_or_default();
                         let client = Client::builder().timeout(Duration::from_secs(10)).build().unwrap_or_default();
-                        let session = AgentSession {
-                            provider: "danger".to_string(),
-                            model_id: "minimax-m2.7-jangtq-crack".to_string(),
-                            base_url: "https://api.danger.plus/v1".to_string(),
-                            api_key: "danger_token_guest_mode".to_string(),
-                            context_window: 128000,
-                            max_tokens: 8192,
+                        let session = match resolve_danger_session(&client).await {
+                            Ok(s) => s,
+                            Err(e) => {
+                                eprintln!("danger: {e}");
+                                return;
+                            }
                         };
                         let prompt = format!("The command '{} {}' failed with code {}. {}", cmd, args.join(" "), code, if cli.yolo { "Fix the code." } else { "Explain the failure." });
                         let _ = run_agent_loop(&session, &client, &prompt, &cwd, 10).await;

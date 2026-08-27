@@ -41,9 +41,13 @@ pub fn execute_repo_search(query: &str, cwd: &Path) -> ToolResult {
     }
 
     if combined_output.is_empty() {
-        // Fallback to literal ripgrep match
+        // Fallback to literal ripgrep match. Same fix as builtin.rs's grep
+        // tool: -e before query, so a query starting with "-" is never
+        // parsed as a ripgrep flag (rg's real --pre option runs a shell
+        // command per file). The primary patterns above already use -e;
+        // only this fallback path was missing it.
         let out = Command::new("rg")
-            .args(["-n", "-C", "2", "--max-count=50", query, "."])
+            .args(["-n", "-C", "2", "--max-count=50", "-e", query, "."])
             .current_dir(cwd)
             .output();
 
